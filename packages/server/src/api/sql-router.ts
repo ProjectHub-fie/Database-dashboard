@@ -5,6 +5,7 @@ import { AppError } from '../lib/errors.js'
 import { redact } from '../lib/redact.js'
 import { requiresConfirmation, classifyStatement } from '../lib/sql-classify.js'
 import { ctxOf } from './context.js'
+import { actorId, requireUser } from './middleware.js'
 
 const runSchema = z.object({
   sql: z.string().min(1).max(100_000),
@@ -55,7 +56,7 @@ export function sqlRouter(): Router {
     const ctx = ctxOf(req)
     return ctx.providerSessions.allocatePrimary(
       String(res.locals.sessionRef ?? ''),
-      Number(res.locals.userId),
+      actorId(res),
     )
   }
 
@@ -109,7 +110,7 @@ export function sqlRouter(): Router {
 
       const result = await qs.execute({ sql, params }, { statementTimeoutMs, maxRows })
       ctx.audit.write({
-        userId: Number(res.locals.userId),
+        userId: actorId(res),
         sessionId: sessionRef,
         event: 'sql.execute',
         status: 'ok',
@@ -154,9 +155,9 @@ export function sqlRouter(): Router {
   })
 
   // POST /api/sql/saved — save a query
-  router.post('/saved', async (req: Request, res: Response) => {
+  router.post('/saved', requireUser, async (req: Request, res: Response) => {
     const ctx = ctxOf(req)
-    const userId = Number(res.locals.userId)
+    const userId = actorId(res) as number
     const parsed = saveSchema.safeParse(req.body)
     if (!parsed.success) throw new AppError({ code: 'BAD_REQUEST', message: 'Invalid saved query' })
     const id = crypto.randomUUID()
@@ -172,17 +173,17 @@ export function sqlRouter(): Router {
   })
 
   // GET /api/sql/saved — list saved queries
-  router.get('/saved', (req: Request, res: Response) => {
+  router.get('/saved', requireUser, (req: Request, res: Response) => {
     const ctx = ctxOf(req)
-    const saved = ctx.store.listSavedQueries(Number(res.locals.userId))
+    const saved = ctx.store.listSavedQueries(actorId(res) as number)
     res.json({ saved })
   })
 
   // DELETE /api/sql/saved/:id
-  router.delete('/saved/:id', (req: Request, res: Response) => {
+  router.delete('/saved/:id', requireUser, (req: Request, res: Response) => {
     const ctx = ctxOf(req)
     const id = String(req.params.id ?? '')
-    const ok = ctx.store.deleteSavedQuery(id, Number(res.locals.userId))
+    const ok = ctx.store.deleteSavedQuery(id, actorId(res) as number)
     if (!ok) throw new AppError({ code: 'NOT_FOUND', message: 'Saved query not found' })
     res.json({ ok: true })
   })

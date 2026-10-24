@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express'
 import { z } from 'zod'
 import { AppError } from '../lib/errors.js'
 import { ctxOf } from './context.js'
-import { requireRecentAuth } from './middleware.js'
+import { requireRecentAuth, actorId } from './middleware.js'
 
 const identSchema = z.object({
   schema: z.string().regex(/^[A-Za-z_][A-Za-z0-9_$]{0,62}$/),
@@ -31,7 +31,7 @@ export function dataRouter(): Router {
   function primary(req: Request, res: Response) {
     const ctx = ctxOf(req)
     const sessionRef = String(res.locals.sessionRef ?? '')
-    const userId = Number(res.locals.userId)
+    const userId = actorId(res)
     return ctx.providerSessions.allocatePrimary(sessionRef, userId)
   }
 
@@ -84,7 +84,7 @@ export function dataRouter(): Router {
     }
     const result = await qs.insertRow({ ...body.data, maxRows: 1 })
     ctx.audit.write({
-      userId: Number(res.locals.userId),
+      userId: actorId(res),
       sessionId: String(res.locals.sessionRef),
       event: 'data.insert',
       status: 'ok',
@@ -111,7 +111,7 @@ export function dataRouter(): Router {
     }
     const result = await qs.updateRow(body.data)
     ctx.audit.write({
-      userId: Number(res.locals.userId),
+      userId: actorId(res),
       sessionId: String(res.locals.sessionRef),
       event: 'data.update',
       status: 'ok',
@@ -145,7 +145,7 @@ export function dataRouter(): Router {
 
     const result = await qs.deleteRow(body.data)
     ctx.audit.write({
-      userId: Number(res.locals.userId),
+      userId: actorId(res),
       sessionId: String(res.locals.sessionRef),
       event: 'data.delete',
       status: 'ok',
@@ -174,7 +174,7 @@ export function dataRouter(): Router {
     }
     const result = await qs.importRows(body.data)
     ctx.audit.write({
-      userId: Number(res.locals.userId),
+      userId: actorId(res),
       sessionId: String(res.locals.sessionRef),
       event: 'data.import',
       status: 'ok',

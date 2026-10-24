@@ -33,7 +33,7 @@ export function SecurityPage() {
         setState('ready')
       })
       .catch((err) => {
-        if (err instanceof ApiError && (err.code === 'NOT_FOUND' || err.code === 'FORBIDDEN')) {
+        if (err instanceof ApiError && (err.code === 'NOT_FOUND' || err.code === 'FORBIDDEN' || err.code === 'UNAUTHORIZED')) {
           setState('ready') // audit endpoint may not be exposed
         } else setState('error')
         toast('info', 'Audit log unavailable', err instanceof ApiError ? err.message : undefined)

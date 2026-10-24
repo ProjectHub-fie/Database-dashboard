@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from 'express'
 import { AppError, asAppError } from '../lib/errors.js'
 import { redactObject } from '../lib/redact.js'
 import { SESSION_COOKIE, CSRF_COOKIE } from '../security/auth.js'
+import { ANON_COOKIE, ANON_CSRF_COOKIE, AnonymousSessionStore } from '../security/anon-session.js'
 import { contextMiddleware, ctxOf, AppContext } from './context.js'
 import { config } from '../config.js'
 import { createLogger } from '../lib/logger.js'
@@ -65,6 +66,65 @@ export function sessionMiddleware(sessionCookieName = SESSION_COOKIE) {
   }
 }
 
+/**
+ * Anonymous session resolution, active only while `config.authRequired` is
+ * false.
+ *
+ * It mints the same three locals a dashboard session provides — `sessionRef`,
+ * `csrf` and `authenticated` — so downstream code (provider session keying,
+ * CSRF double-submit, audit writes) keeps working untouched. `userId` stays
+ * unset: an anonymous visitor is not a user, and pretending otherwise would
+ * let anonymous state collide with a real account's row ids.
+ */
+export function anonymousSession(store: AnonymousSessionStore, authRequired = config.authRequired) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    // Carried on the response so downstream guards (reauth, actor scoping) obey
+    // the same setting instead of re-reading global config. Keeps the secured
+    // and anonymous configurations testable in one process.
+    res.locals.authRequired = authRequired
+    if (authRequired || res.locals.authenticated) return next()
+
+    const raw = req.cookies?.[ANON_COOKIE]
+    const { session, isNew } = store.resolve(typeof raw === 'string' ? raw : undefined)
+
+    if (isNew) {
+      const opts = cookieOptions(req)
+      res.cookie(ANON_COOKIE, session.ref, opts)
+      // Readable by design: the client echoes it back in `x-csrf-token`.
+      res.cookie(ANON_CSRF_COOKIE, session.csrf, { ...opts, httpOnly: false })
+    }
+
+    res.locals.sessionRef = session.ref
+    res.locals.csrf = session.csrf
+    res.locals.authenticated = false
+    res.locals.anonymous = true
+    next()
+  }
+}
+
+/** Actor id for owner-scoped work: the user id, or null for anonymous. */
+export function actorId(res: Response): number | null {
+  return (res.locals.userId as number | undefined) ?? null
+}
+
+/**
+ * Routes that own per-user rows (saved queries, audit history) cannot serve an
+ * anonymous caller — there is no user to own the row. Kept as a guard rather
+ * than a route-level delete so enabling auth restores the behaviour exactly.
+ */
+export function requireUser(_req: Request, res: Response, next: NextFunction): void {
+  if (!res.locals.userId) {
+    res.status(401).json({
+      error: {
+        code: 'UNAUTHORIZED',
+        message: 'This feature needs a dashboard account. Sign in to use saved queries and audit history.',
+      },
+    })
+    return
+  }
+  next()
+}
+
 /** Require an authenticated dashboard session. */
 export function requireAuth(_req: Request, res: Response, next: NextFunction): void {
   if (!res.locals.authenticated) {
@@ -108,6 +168,10 @@ export function requireRecentAuth(req: Request, res: Response, next: NextFunctio
   if (!sessionId) {
     return fail(req, res, new AppError({ code: 'UNAUTHORIZED', message: 'Not signed in' }), ctx)
   }
+  // Reauthentication means re-entering a dashboard password. Anonymous
+  // sessions have none, so the check is skipped only while auth is disabled.
+  const authRequired = (res.locals.authRequired as boolean | undefined) ?? config.authRequired
+  if (!authRequired) return next()
   const ttlMs = config.sessionReauthTtlMs
   const reauthAt = ctx.store.getSessionReauthAt(sessionId)
   if (Date.now() - reauthAt > ttlMs) {

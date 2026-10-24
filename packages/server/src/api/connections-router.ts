@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import { z } from 'zod'
 import { AppError } from '../lib/errors.js'
 import { ctxOf } from './context.js'
+import { actorId } from './middleware.js'
 import { redact } from '../lib/redact.js'
 import { verifyNeonConnectionUrl } from '../security/netlib.js'
 import { NeonProvider } from '../providers/neon/provider.js'
@@ -84,7 +85,7 @@ export function connectionsRouter(): Router {
 
     ctx.providerSessions.create({
       sessionId: sessionRef,
-      userId: Number(res.locals.userId),
+      userId: actorId(res),
       providerId: 'neon',
       auth: 'connection',
       connection: connRef,
@@ -101,7 +102,7 @@ export function connectionsRouter(): Router {
     })
 
     ctx.audit.write({
-      userId: Number(res.locals.userId),
+      userId: actorId(res),
       sessionId: sessionRef,
       event: 'connection.connect',
       status: 'ok',
@@ -136,7 +137,7 @@ export function connectionsRouter(): Router {
 
     ctx.providerSessions.create({
       sessionId: sessionRef,
-      userId: Number(res.locals.userId),
+      userId: actorId(res),
       providerId: 'neon',
       auth: 'api',
       connection: null,
@@ -157,7 +158,7 @@ export function connectionsRouter(): Router {
     p.controlPlane = control
 
     ctx.audit.write({
-      userId: Number(res.locals.userId),
+      userId: actorId(res),
       sessionId: sessionRef,
       event: 'connection.connect',
       status: 'ok',
@@ -195,7 +196,7 @@ export function connectionsRouter(): Router {
     if (p) {
       await ctx.providerSessions.destroy(p)
       ctx.audit.write({
-        userId: Number(res.locals.userId),
+        userId: actorId(res),
         sessionId: sessionRef,
         event: 'connection.disconnect',
         status: 'ok',
@@ -209,7 +210,7 @@ export function connectionsRouter(): Router {
   router.get('/health', async (req: Request, res: Response) => {
     const ctx = ctxOf(req)
     const sessionRef = String(res.locals.sessionRef ?? '')
-    const p = ctx.providerSessions.require(sessionRef, Number(res.locals.userId))
+    const p = ctx.providerSessions.require(sessionRef, actorId(res))
     ctx.providerSessions.touch(sessionRef)
     if (p.accountOnly || !p.connection) {
       res.json({ reachable: false, detail: 'This connection has no live database session (management-only API connection).' })
@@ -220,7 +221,7 @@ export function connectionsRouter(): Router {
     try {
       const { latencyMs, version } = await provider.database!.ping(p.connection.conn as never)
       ctx.audit.write({
-        userId: Number(res.locals.userId),
+        userId: actorId(res),
         sessionId: sessionRef,
         event: 'connection.health',
         status: 'ok',

@@ -58,6 +58,7 @@ export function authRouter(): Router {
 
     res.json({
       authenticated: true,
+      authRequired: config.authRequired,
       user: {
         id: user.id,
         username: user.username,
@@ -147,7 +148,9 @@ export function authRouter(): Router {
     const ctx = ctxOf(req)
     void req
     if (!res.locals.authenticated) {
-      res.json({ authenticated: false })
+      // authRequired lets the UI keep connection screens reachable while the
+      // account requirement is disabled; it is not a client-side permission.
+      res.json({ authenticated: false, authRequired: config.authRequired, anonymous: Boolean(res.locals.anonymous) })
       return
     }
     const account = res.locals.account as SessionAccount

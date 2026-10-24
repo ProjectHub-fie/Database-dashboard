@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import { z } from 'zod'
 import { AppError } from '../lib/errors.js'
 import { ctxOf } from './context.js'
+import { actorId } from './middleware.js'
 
 const ident = () => z.string().regex(/^[A-Za-z_][A-Za-z0-9_$]{0,62}$/).max(63)
 const identOrQuoted = () => z.string().min(1).max(120)
@@ -86,13 +87,13 @@ export function schemaRouter(): Router {
     const ctx = ctxOf(req)
     return ctx.providerSessions.allocatePrimary(
       String(res.locals.sessionRef ?? ''),
-      Number(res.locals.userId),
+      actorId(res),
     )
   }
 
   function writeAudit(req: Request, res: Response, event: string, detail: string, target?: string): void {
     ctxOf(req).audit.write({
-      userId: Number(res.locals.userId),
+      userId: actorId(res),
       sessionId: String(res.locals.sessionRef),
       event,
       status: 'ok',

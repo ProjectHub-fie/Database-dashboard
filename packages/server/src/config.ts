@@ -16,6 +16,13 @@ export interface AppConfig {
   trustProxyHops: number
   dataDir: string
   serveClient: boolean
+  /**
+   * Whether a dashboard account is required before connecting. Authentication
+   * is temporarily optional (default false) while the connection flows are
+   * being exercised; set AUTH_REQUIRED=true to restore the full model. Every
+   * check behind this flag is still wired — the flag only short-circuits it.
+   */
+  authRequired: boolean
 }
 
 function bool(v: string | undefined, dflt: boolean): boolean {
@@ -68,6 +75,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     // Static SPA hosting is on by default in production. The override exists so
     // staging/self-hosted dev boxes can serve the built client from this server.
     serveClient: bool(env.SERVE_CLIENT, nodeEnv === 'production'),
+    authRequired: bool(env.AUTH_REQUIRED, false),
   }
 }
 

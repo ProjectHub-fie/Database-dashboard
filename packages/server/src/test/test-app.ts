@@ -11,7 +11,8 @@ import { ProviderSessionManager } from '../security/provider-sessions.js'
 import { ProviderRegistryImpl } from '../providers/registry.js'
 import { NeonProvider } from '../providers/neon/provider.js'
 import { NeonHttpClient, NeonApiError } from '../providers/neon/client.js'
-import { installContext, sessionMiddleware, requireAuth, csrfProtection, errorHandler } from '../api/middleware.js'
+import { installContext, sessionMiddleware, requireAuth, csrfProtection, errorHandler, anonymousSession } from '../api/middleware.js'
+import { AnonymousSessionStore } from '../security/anon-session.js'
 import { authRouter } from '../api/auth-router.js'
 import { connectionsRouter } from '../api/connections-router.js'
 import { providersRouter } from '../api/providers-router.js'
@@ -77,7 +78,16 @@ export function mockNeonHttp(): MockNeonHttpClient {
   }
 }
 
-export async function makeTestApp(opts: { neonHttp?: MockNeonHttpClient } = {}): Promise<{
+/**
+ * Build an app instance for tests.
+ *
+ * `authRequired` defaults to true: the security suite asserts that unauthenticated
+ * callers are rejected, so the harness must model the *secured* configuration.
+ * Anonymous-mode tests opt in explicitly with `authRequired: false`.
+ */
+export async function makeTestApp(
+  opts: { neonHttp?: MockNeonHttpClient; authRequired?: boolean } = {},
+): Promise<{
   app: express.Express
   store: Store
   auth: AuthService
@@ -93,7 +103,8 @@ export async function makeTestApp(opts: { neonHttp?: MockNeonHttpClient } = {}):
   const provider = new NeonProvider({ http: neonHttp, skipConnectionUrlHostValidation: true })
   registry.register(provider)
   const sessions = new ProviderSessionManager((id) => registry.get(id))
-  const ctx = { store, auth, providerSessions: sessions, audit, registry }
+  const anonSessions = new AnonymousSessionStore()
+  const ctx = { store, auth, providerSessions: sessions, audit, registry, anonSessions }
 
   const app = express()
   installContext(app, ctx)
@@ -101,10 +112,12 @@ export async function makeTestApp(opts: { neonHttp?: MockNeonHttpClient } = {}):
   app.use(cookieParser())
   app.use(express.json({ limit: '1mb' }))
   app.use('/api', sessionMiddleware())
+  app.use('/api', anonymousSession(anonSessions, opts.authRequired ?? true))
   app.use('/api/auth', authRouter())
   app.use('/api/providers', providersRouter())
   app.use('/api', (req, res, next) => {
     if (req.path === '/auth/login') return next()
+    if (!(opts.authRequired ?? true)) return next()
     return requireAuth(req, res, next)
   }, csrfProtection({ exempt: (req) => ['GET', 'HEAD', 'OPTIONS'].includes(req.method) }))
   app.use('/api/connections', connectionsRouter())

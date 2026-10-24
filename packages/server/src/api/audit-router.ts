@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import { z } from 'zod'
 import { AppError } from '../lib/errors.js'
 import { ctxOf } from './context.js'
+import { actorId, requireUser } from './middleware.js'
 
 const listSchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
@@ -18,10 +19,10 @@ export function auditRouter(): Router {
   const router = Router()
 
   // GET /api/audit?limit=&offset=&event=
-  router.get('/', (req: Request, res: Response) => {
+  router.get('/', requireUser, (req: Request, res: Response) => {
     const ctx = ctxOf(req)
-    const userId = Number(res.locals.userId)
-    if (!Number.isInteger(userId) || userId <= 0) {
+    const userId = actorId(res)
+    if (!Number.isInteger(userId) || (userId as number) <= 0) {
       throw new AppError({ code: 'UNAUTHORIZED', message: 'Not signed in' })
     }
     const parsed = listSchema.safeParse(req.query)
