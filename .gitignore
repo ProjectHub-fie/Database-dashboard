@@ -31,3 +31,5 @@ logs/
 .agent_tmp/
 # TypeScript incremental build info
 *.tsbuildinfo
+.vercel
+.env*

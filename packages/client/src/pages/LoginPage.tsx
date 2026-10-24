@@ -61,8 +61,9 @@ export function LoginPage() {
 
   const signedIn = auth.me?.authenticated === true
   // When the server runs with auth disabled, the URL/API modes are usable
-  // without a dashboard account. The account tab and its logic remain intact.
-  const authRequired = auth.me?.authRequired === false ? false : true
+  // without a dashboard account. Default to anonymous mode; only flip to the
+  // account tab when the server explicitly says auth is required.
+  const authRequired = auth.me?.authRequired === true
 
   // `null` follows the auth state; once the user picks a tab their choice wins.
   // Avoids a flash of the wrong tab while /auth/me is loading.
@@ -86,6 +87,7 @@ export function LoginPage() {
 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [debug, setDebug] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
   const [providers, setProviders] = useState<ProviderCatalogEntry[] | null>(null)
@@ -134,7 +136,21 @@ export function LoginPage() {
   }
 
   function fail(err: unknown, fallback: string) {
-    setError(err instanceof ApiError ? err.message : fallback)
+    if (err instanceof ApiError) {
+      // Surface enough diagnostics to debug without leaking secrets: HTTP
+      // status, server error code and the tracing request id.
+      setError(err.message)
+      setDebug(
+        `HTTP ${err.status} · ${err.code}${err.requestId ? ` · req ${err.requestId}` : ''}${
+          err.code === 'NOT_FOUND'
+            ? '\nThe API returned 404. If this is a fresh deploy, the old backend may still be live — try again in a minute.'
+            : ''
+        }`,
+      )
+    } else {
+      setError(fallback)
+      setDebug(null)
+    }
   }
 
   function requireSignIn() {
@@ -303,13 +319,20 @@ export function LoginPage() {
               </div>
             )}
             {error && (
-              <div className="mb-4 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12.5px] text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300">
-                <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-                <span role="alert" className="flex-1">{error}</span>
-                {mode === 'url' && (
-                  <button type="button" onClick={() => void testUrl()} className="shrink-0 font-medium underline underline-offset-2">
-                    Retry
-                  </button>
+              <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12.5px] text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300">
+                <div className="flex items-start gap-2">
+                  <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                  <span role="alert" className="flex-1">{error}</span>
+                  {mode === 'url' && (
+                    <button type="button" onClick={() => void testUrl()} className="shrink-0 font-medium underline underline-offset-2">
+                      Retry
+                    </button>
+                  )}
+                </div>
+                {debug && (
+                  <pre className="mt-1.5 overflow-x-auto rounded bg-rose-100/60 px-2 py-1 font-mono text-[11px] leading-4 text-rose-800/90 dark:bg-rose-900/40 dark:text-rose-200/90">
+                    {debug}
+                  </pre>
                 )}
               </div>
             )}
