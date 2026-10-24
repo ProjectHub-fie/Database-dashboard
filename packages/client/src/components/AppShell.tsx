@@ -27,6 +27,8 @@ import {
   Command,
 } from 'lucide-react'
 import { Badge } from './ui'
+import { Footer } from './Footer'
+import { GoToTop } from './GoToTop'
 
 interface NavItem {
   to: string
@@ -218,7 +220,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto bg-slate-50/60 p-4 sm:p-6 dark:bg-slate-950">{children}</main>
+        <main id="app-scroll" className="flex-1 overflow-y-auto bg-slate-50/60 p-4 sm:p-6 dark:bg-slate-950">{children}</main>
+        <Footer />
+        <GoToTop />
       </div>
 
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} items={visibleNav} />}

@@ -7,6 +7,8 @@ import { Button, Input, Label, Badge, Spinner } from '../components/ui'
 import { api, ApiError } from '../lib/api'
 import { ConnectionStatus, ProviderCatalogEntry } from '../lib/types'
 import { resolveCatalog, supportsAuthMethod, catalogIssueMessage } from '../lib/provider-catalog'
+import { Footer } from '../components/Footer'
+import { GoToTop } from '../components/GoToTop'
 import {
   Database,
   KeyRound,
@@ -270,7 +272,7 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-white dark:bg-slate-950">
+    <div className="flex min-h-screen flex-col bg-white dark:bg-slate-950">
       <header className="border-b border-slate-200/80 dark:border-slate-800">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-2.5">
@@ -298,7 +300,7 @@ export function LoginPage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-6 pb-24 pt-12 sm:pt-16">
+      <main id="app-scroll" className="mx-auto w-full max-w-6xl flex-1 px-6 pb-16 pt-12 sm:pt-16">
         <div className="mx-auto max-w-3xl text-center">
           <h1 className="text-balance text-[32px] font-extrabold leading-[1.06] tracking-[-0.035em] text-slate-900 sm:text-[44px] dark:text-white">
             {signedIn ? 'Connect a database' : authRequired ? 'Sign in to DB Horizon' : 'Connect a database'}
@@ -420,12 +422,10 @@ export function LoginPage() {
             )}
           </div>
 
-          <p className="mt-4 text-center text-[11px] leading-relaxed text-slate-400 dark:text-slate-500">
-            Dashboard accounts are provisioned by the server administrator. Database and provider
-            credentials are never stored in the browser or in the dashboard database.
-          </p>
         </div>
       </main>
+      <Footer />
+      <GoToTop />
     </div>
   )
 }

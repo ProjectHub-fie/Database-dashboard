@@ -56,10 +56,40 @@ re-validated against the session's own resources on every request.
   NOT treat this as account access: no discovery or management of unrelated
   cloud resources. Neon's URL mode calls PostgreSQL only.
 - **Provider API credentials** (e.g. a Neon API key). Validated against the
-  official provider API; key kept in server memory only.
+  official provider API; key kept in server memory only. API-key sessions can
+  optionally attach a database so that data / SQL / schema features work too
+  (see "Opening a database from API mode" below).
 
 A provider declares which methods it supports in `authMethods`. The connect UI
 shows exactly those.
+
+### Opening a database from API mode
+
+For each provider that supports it, the control-plane adapter should implement
+the optional method:
+
+```ts
+getConnectionUri?(input: {
+  projectId: string
+  databaseName: string
+  branchId?: string
+  role?: string
+  pooled?: boolean
+}): Promise<string>
+```
+
+The returned URI **includes credentials** and must only ever be consumed
+server-side. Never put it in a response, and pass its password to the session's
+`secretHints` so redaction covers it. Whatever the provider returns, the
+dashboard still runs it through the same host allowlist, private-range
+rejection, DNS pinning and TLS verification as a user-pasted URL — the
+provider's own URI is not trusted just because of where it came from.
+
+Once a database is attached through `POST /api/connections/database`, the
+session keeps `auth: 'api'` (control-plane pages keep working) but behaves like
+a URL-mode session for `data.*`, `sql.*` and `schema.*` routes. Detach with
+`POST /api/connections/database/detach` closes the pool and returns to
+management-only without dropping the API key.
 
 ## Capability declarations
 
