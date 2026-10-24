@@ -103,6 +103,11 @@ export interface ConnectionMetadata {
   region?: string
   /** Read-only value is derived from the connected role, never from a UI toggle. */
   readOnly: boolean
+  /** Control-plane coordinates, present when the connection came from API mode. */
+  projectId?: string
+  projectName?: string
+  branchId?: string
+  branchName?: string
 }
 
 export interface Organization {
@@ -476,7 +481,16 @@ export interface ControlPlaneAdapter {
   readonly providerId: string
   readonly apiBaseUrl: string
 
-  validateApiKey(): Promise<{ organizations?: Organization[]; accountId?: string }>
+  /**
+   * `organizationScoped` is set when the key cannot read `/users/me` — Neon
+   * refuses that for organization API keys — so callers know the identity is
+   * absent by design rather than missing.
+   */
+  validateApiKey(): Promise<{
+    organizations?: Organization[]
+    accountId?: string
+    organizationScoped?: boolean
+  }>
 
   listOrganizations(): Promise<Organization[]>
   listProjects(orgId?: string): Promise<Project[]>
@@ -494,6 +508,19 @@ export interface ControlPlaneAdapter {
 
   listEndpoints(input: { projectId: string }): Promise<Endpoint[]>
   getConnectionInfo(input: { projectId: string; databaseName: string; branchId?: string; role?: string }): Promise<ProjectConnectionInfo>
+
+  /**
+   * Raw connection URI *including credentials*, for opening a database session
+   * from a control-plane credential. Server-side only: callers must never put
+   * this value in a response, and must add its password to redaction hints.
+   */
+  getConnectionUri?(input: {
+    projectId: string
+    databaseName: string
+    branchId?: string
+    role?: string
+    pooled?: boolean
+  }): Promise<string>
 
   getOperation(input: { operationId: string; projectId?: string }): Promise<ProviderOperation>
   listOperations(input: { projectId?: string; limit?: number }): Promise<ProviderOperation[]>

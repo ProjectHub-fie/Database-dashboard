@@ -6,7 +6,7 @@ import { actorId } from './middleware.js'
 import { redact } from '../lib/redact.js'
 import { verifyNeonConnectionUrl } from '../security/netlib.js'
 import { NeonProvider } from '../providers/neon/provider.js'
-import { serializeCapabilities } from '../providers/registry.js'
+import { capabilitiesForAuth, serializeCapabilities } from '../providers/registry.js'
 import { readOnlyRoles } from '../security/roles.js'
 import { config } from '../config.js'
 
@@ -32,6 +32,19 @@ const connectApiSchema = z.object({
   displayName: displayNameSchema,
 })
 
+const identPart = z.string().regex(/^[A-Za-z_][A-Za-z0-9_$]{0,62}$/)
+const neonIdPart = z.string().min(1).max(100).regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/)
+
+/** Pick a database inside an API-key session, exactly like a URL connection. */
+const attachDatabaseSchema = z.object({
+  projectId: neonIdPart,
+  branchId: neonIdPart,
+  databaseName: identPart,
+  role: identPart.optional(),
+  pooled: z.boolean().optional(),
+  displayName: displayNameSchema,
+})
+
 export function connectionsRouter(): Router {
   const router = Router()
 
@@ -51,7 +64,9 @@ export function connectionsRouter(): Router {
       providerId: p.providerId,
       metadata: p.metadata,
       accountOnly: p.accountOnly,
-      capabilities: serializeCapabilities(ctx.registry.capabilities(p.providerId)),
+      capabilities: serializeCapabilities(
+        capabilitiesForAuth(ctx.registry.capabilities(p.providerId), p.auth),
+      ),
     })
   })
 
@@ -123,7 +138,9 @@ export function connectionsRouter(): Router {
         ...(displayName ? { displayName } : {}),
       },
       accountOnly: false,
-      capabilities: serializeCapabilities(ctx.registry.capabilities('neon')),
+      capabilities: serializeCapabilities(
+        capabilitiesForAuth(ctx.registry.capabilities('neon'), 'connection'),
+      ),
     })
   })
 
@@ -180,8 +197,148 @@ export function connectionsRouter(): Router {
         ...(displayName ? { displayName } : {}),
       },
       accountOnly: true,
-      capabilities: serializeCapabilities(ctx.registry.capabilities('neon')),
+      capabilities: serializeCapabilities(
+        capabilitiesForAuth(ctx.registry.capabilities('neon'), 'api'),
+      ),
       organizations: validation.organizations ?? [],
+      organizationScoped: validation.organizationScoped === true,
+    })
+  })
+
+  /**
+   * POST /api/connections/database — bind a database to an API-key session.
+   *
+   * Neon returns a credential-bearing URI; it is verified with the same host
+   * allowlist, DNS pinning and TLS path as a pasted URL, then consumed
+   * server-side. Only safe metadata is returned.
+   */
+  router.post('/database', async (req: Request, res: Response) => {
+    const ctx = ctxOf(req)
+    const sessionRef = String(res.locals.sessionRef ?? '')
+    const p = ctx.providerSessions.require(sessionRef, actorId(res))
+    if (p.auth !== 'api' || !p.controlPlane) {
+      throw new AppError({
+        code: 'FORBIDDEN',
+        message: 'Only an API-key connection can attach a database by project, branch and name.',
+      })
+    }
+    const body = attachDatabaseSchema.parse(req.body ?? {})
+    const cp = p.controlPlane
+    if (typeof cp.getConnectionUri !== 'function') {
+      throw new AppError({
+        code: 'NOT_IMPLEMENTED',
+        message: 'This provider cannot open database sessions from an API key.',
+      })
+    }
+
+    const provider = ctx.registry.require(p.providerId) as NeonProvider
+    const uri = await cp.getConnectionUri({
+      projectId: body.projectId,
+      branchId: body.branchId,
+      databaseName: body.databaseName,
+      ...(body.role ? { role: body.role } : {}),
+      ...(body.pooled !== undefined ? { pooled: body.pooled } : {}),
+    })
+
+    // Same guard as URL mode: approved Neon host, resolved address pinned, TLS
+    // verified. A URI from the provider API is not trusted just because of its
+    // origin — it is a network destination like any other.
+    const verified = await verifyNeonConnectionUrl(uri, {
+      allowLocalhost: config.nodeEnv !== 'production',
+    })
+    const password = new URL(uri).password
+    const decodedPass = password ? decodeURIComponent(password) : ''
+
+    const connRef = await providerConnectWithUrl(provider, {
+      host: verified.host,
+      port: verified.port,
+      database: verified.database,
+      role: verified.role,
+      password: decodedPass,
+      pinnedAddress: verified.verified.address,
+    })
+
+    // Region/project/branch labels are display-only; a failed lookup must not
+    // cost the operator the connection they just opened.
+    let projectName: string | undefined
+    let branchName: string | undefined
+    let region: string | undefined
+    try {
+      const [project, branches] = await Promise.all([
+        cp.getProject({ projectId: body.projectId }),
+        cp.listBranches({ projectId: body.projectId }),
+      ])
+      projectName = project.name
+      region = project.region
+      branchName = branches.find((b) => b.id === body.branchId)?.name
+    } catch {
+      // ignore: metadata is cosmetic
+    }
+
+    const metadata = {
+      host: verified.host,
+      database: verified.database,
+      role: verified.role,
+      readOnly: readOnlyRoles.has(verified.role.toLowerCase()),
+      projectId: body.projectId,
+      branchId: body.branchId,
+      ...(projectName ? { projectName } : {}),
+      ...(branchName ? { branchName } : {}),
+      ...(region ? { region } : {}),
+      ...(body.displayName ?? p.metadata?.displayName ? { displayName: body.displayName ?? p.metadata!.displayName } : {}),
+    }
+
+    await ctx.providerSessions.attachConnection(sessionRef, actorId(res), {
+      connection: connRef,
+      metadata,
+      secretHints: [decodedPass, verified.role, verified.database],
+    })
+
+    ctx.audit.write({
+      userId: actorId(res),
+      sessionId: sessionRef,
+      event: 'connection.database',
+      status: 'ok',
+      target: `${verified.host}/${verified.database}`,
+      detail: redact(
+        `auth=api project=${body.projectId} branch=${body.branchId} database=${verified.database} role=${verified.role}`,
+        { secrets: [decodedPass, uri] },
+      ),
+    })
+
+    res.json({
+      connected: true,
+      auth: 'api',
+      metadata,
+      accountOnly: false,
+      capabilities: serializeCapabilities(
+        capabilitiesForAuth(ctx.registry.capabilities(p.providerId), 'api'),
+      ),
+    })
+  })
+
+  // POST /api/connections/database/detach — back to account-only, key retained.
+  router.post('/database/detach', async (req: Request, res: Response) => {
+    void req
+    const ctx = ctxOf(req)
+    const sessionRef = String(res.locals.sessionRef ?? '')
+    const p = await ctx.providerSessions.detachConnection(sessionRef, actorId(res))
+    p.metadata = p.metadata ? { ...p.metadata, host: 'console.neon.tech', database: '', role: '', readOnly: false } : p.metadata
+    ctx.audit.write({
+      userId: actorId(res),
+      sessionId: sessionRef,
+      event: 'connection.detach',
+      status: 'ok',
+      target: p.providerId,
+    })
+    res.json({
+      connected: true,
+      auth: p.auth,
+      metadata: p.metadata,
+      accountOnly: true,
+      capabilities: serializeCapabilities(
+        capabilitiesForAuth(ctx.registry.capabilities(p.providerId), p.auth),
+      ),
     })
   })
 

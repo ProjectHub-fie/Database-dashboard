@@ -88,6 +88,19 @@ is diagnosable, but never the credential.
   with polling until the provider reports success.
 - Connection diagnostics, project/branch/database selection, region display.
 
+### Organization-scoped keys
+
+A key created inside a Neon **organization** behaves differently from a personal
+key: Neon answers `GET /users/me` with `404 not allowed for organization API
+keys`, because that endpoint describes a personal account the key does not own.
+The dashboard treats this as a *successful* validation and confirms the key by
+listing projects instead. The connect screen then says the key is
+organization-scoped rather than claiming it can see a personal account.
+
+Practical consequence: with an organization key, project and organization lists
+come straight from `/projects`, and the account-level details that
+`/users/me` would have supplied are simply not shown.
+
 ### Scoping guidance
 
 - **Prefer project-scoped keys** for day-to-day work in the dashboard.

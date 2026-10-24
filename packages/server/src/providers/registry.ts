@@ -52,6 +52,32 @@ export function serializeCapabilities(
   return { auth: [...caps.auth], capabilities: [...caps.capabilities].sort() }
 }
 
+/**
+ * Capability ids that only exist with a provider **API key**.
+ *
+ * Control-plane operations (`control.*`) call the provider's management API, and
+ * `monitoring.usage` reads its consumption history. Neither is reachable with a
+ * database URL, so advertising them in connection mode renders buttons that can
+ * only fail with 401. The server already refuses those routes; this makes the
+ * advertised set match what is actually enforced.
+ */
+const CONTROL_PLANE_CAPABILITY_PREFIXES = ['control.', 'monitoring.'] as const
+
+export function capabilitiesForAuth(
+  caps: ProviderCapabilities | undefined,
+  auth: 'connection' | 'api',
+): ProviderCapabilities | undefined {
+  if (!caps || auth === 'api') return caps
+  return {
+    auth: caps.auth,
+    capabilities: new Set(
+      [...caps.capabilities].filter(
+        (id) => !CONTROL_PLANE_CAPABILITY_PREFIXES.some((prefix) => id.startsWith(prefix)),
+      ),
+    ),
+  }
+}
+
 export function createRegistry(): ProviderRegistryImpl {
   return new ProviderRegistryImpl()
 }

@@ -47,9 +47,16 @@ session/audit data.
   `path=/`.
 - CSRF token cookie `dbh_csrf`: readable to JS, double-submit — every state
   changing request must echo `x-csrf-token`.
-- Login is rate-limited (`express-rate-limit` on `/api/auth/login`); unknown
-  users are answered with a dummy Argon2 verify to even out timing; both bad-user
-  and bad-password return the identical message.
+- Login is protected by two independent controls:
+  - a global API limiter (300 req/min per instance) that caps raw volume, and
+  - `LoginThrottle` failure-driven lockout: 5 failed attempts lock the account
+    for 15 minutes, 20 failed attempts lock the source IP. Blocked attempts
+    return `429 RATE_LIMITED` with a `Retry-After` header and an audit row.
+  The IP cap is deliberately higher than the account cap so that several people
+  behind one NAT cannot lock each other out, and so nobody can weaponise the
+  limiter to deny access to a shared office address.
+- Unknown users are answered with a dummy Argon2 verify to even out timing; both
+  bad-user and bad-password return the identical message.
 - Sessions have TTL (default 8 h) and idle timeout (default 30 min); both are
   configurable via env. `/api/auth/reauth` re-verifies the password and stamps a
   short window used by destructive actions.
@@ -129,10 +136,15 @@ For deleting/altering rows, tables, columns, databases, branches, projects:
 ## Audit log
 
 - Every auth event, connection attempt, SQL execution, schema change, import and
-  destructive action is written **with user and session** and is **redacted** of
-  secrets. The persisted audit log is enabled by default and can be disabled in
-  Settings; a no-op guard in `Security.audit.ts` keeps a redacted structured
-  server-log trail even when the store-level audit is off.
+  destructive action is written **with user and session**. The persisted audit
+  log is enabled by default and can be disabled in Settings; a structured
+  server-log trail is written even when the store-level audit is off.
+- Redaction is pattern-based (authorization headers, URL query parameters, SQL
+  connection-string passwords). Call sites that hold a live credential pass it
+  explicitly to `redact()` (see `sql-router`), so free-text detail such as
+  `statement=... rows=...` stays readable. Detail is never treated as a secret
+  value itself — doing so would replace the whole string with `[REDACTED]` and
+  defeat the purpose of the log.
 - `/api/audit` returns only the caller's events; the UI's Security page shows
   them.
 - Audit rows are pruned after `retentionDays` (default: 90 days).

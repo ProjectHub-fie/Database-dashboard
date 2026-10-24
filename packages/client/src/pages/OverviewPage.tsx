@@ -257,7 +257,23 @@ function ConnectionCard() {
       <h2 className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-100">Connection details</h2>
       <div className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
         <Row label="Provider" value="Neon PostgreSQL" />
-        <Row label="Mode" value={c.auth === 'api' ? 'Neon API key' : 'Database URL'} />
+        <Row
+          label="Mode"
+          value={
+            c.auth === 'api'
+              ? c.accountOnly
+                ? 'Neon API key (management only)'
+                : 'Neon API key + database'
+              : 'Database URL'
+          }
+        />
+        {c.metadata?.projectName || c.metadata?.projectId ? (
+          <Row label="Project" value={c.metadata.projectName ?? c.metadata.projectId ?? '—'} />
+        ) : null}
+        {c.metadata?.branchName || c.metadata?.branchId ? (
+          <Row label="Branch" value={c.metadata.branchName ?? c.metadata.branchId ?? '—'} mono />
+        ) : null}
+        {c.metadata?.region ? <Row label="Region" value={c.metadata.region} mono /> : null}
         <Row label="Host" value={c.metadata?.host ?? '—'} mono />
         <Row label="Database" value={c.metadata?.database || (c.accountOnly ? '(control plane)' : '—')} mono />
         <Row label="Role" value={c.metadata?.role || '—'} mono />

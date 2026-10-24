@@ -12,6 +12,11 @@ import { makeTestApp, TestAgent } from '../test/test-app.js'
  *  - CSRF double-submit still protects state-changing requests,
  *  - account-only features (saved queries, audit history) stay closed off.
  */
+function csrfOf(agent: TestAgent): string {
+  const raw = agent.cookies.find((c) => c.startsWith('dbh_csrf=')) ?? ''
+  return decodeURIComponent(raw.slice('dbh_csrf='.length))
+}
+
 describe('Anonymous connection mode (auth temporarily optional)', () => {
   let app: Express
   let anon: TestAgent
@@ -57,6 +62,46 @@ describe('Anonymous connection mode (auth temporarily optional)', () => {
   it('still blocks state-changing requests without a CSRF token', async () => {
     const res = await anon.post('/api/connections/disconnect', {})
     expect(res.status).toBe(403)
+  })
+
+  it('re-issues the CSRF cookie after logout so a later write is not a 403', async () => {
+    // Regression: logout cleared `dbh_csrf` but kept the still-valid `dbh_anon`,
+    // so the server resolved an existing session, never re-sent the cookie, and
+    // the client had no token to echo. Every write then failed 403 until the anon
+    // cookie aged out. Reproduce the exact browser sequence:
+    //   connect -> sign in -> logout -> (re)login or any other write.
+    const agent = new TestAgent(app)
+    await agent.get('/api/auth/me')
+    const before = agent.cookies.find((c) => c.startsWith('dbh_csrf=')) ?? ''
+    expect(before).not.toBe('')
+
+    const logout = await agent.post('/api/auth/logout', {}, csrfOf(agent))
+    expect(logout.status).toBe(200)
+
+    // The browser is rid of the token, exactly as after clearSessionCookies.
+    const afterLogout = agent.cookies.find((c) => c.startsWith('dbh_csrf=')) ?? ''
+    expect(afterLogout.split('=')[1] ?? '').toBe('')
+
+    // The next API read must restore a usable token...
+    await agent.get('/api/auth/me')
+    const restored = csrfOf(agent)
+    expect(restored).not.toBe('')
+
+    // ...and the write must now be accepted by the CSRF guard (the request is
+    // rejected further in for having no connection, not by the token check).
+    const write = await agent.post('/api/connections/disconnect', {}, restored)
+    expect(write.status).not.toBe(403)
+  })
+
+  it('keeps the CSRF token stable for an unchanged session', async () => {
+    const agent = new TestAgent(app)
+    await agent.get('/api/auth/me')
+    const first = csrfOf(agent)
+    const res = await agent.get('/api/connections/status')
+    const setCookies = (res.headers['set-cookie'] as unknown as string[]) ?? []
+    // No needless re-issue on every response.
+    expect(setCookies.some((c) => c.startsWith('dbh_csrf='))).toBe(false)
+    expect(csrfOf(agent)).toBe(first)
   })
 
   it('passes CSRF once the token cookie is presented', async () => {

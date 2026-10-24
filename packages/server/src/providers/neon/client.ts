@@ -173,12 +173,49 @@ export class NeonControlPlane implements ControlPlaneAdapter {
     private readonly http: NeonHttpClient = new FetchNeonHttpClient(),
   ) {}
 
-  async validateApiKey(): Promise<{ organizations?: Organization[]; accountId?: string }> {
-    const me = await this.http.request<{ id?: string; email?: string }>({
-      method: 'GET',
-      path: '/users/me',
-      apiKey: this.apiKey,
-    })
+  /**
+   * Validate a key against the personal endpoints, falling back to `/projects`.
+   *
+   * `GET /users/me` is not allowed for organization API keys — Neon answers 404
+   * `not allowed for organization API keys` — so treating that failure as an
+   * invalid credential rejected every org-scoped key, which is exactly the
+   * reduced-blast-radius kind we want people to use. `/projects` is readable by
+   * both key types, so it is the real credential test.
+   *
+   * A 401 still means the key is bad, and is never retried against `/projects`.
+   */
+  async validateApiKey(): Promise<{
+    organizations?: Organization[]
+    accountId?: string
+    organizationScoped?: boolean
+  }> {
+    let me: { id?: string } | undefined
+    let organizationScoped = false
+
+    try {
+      me = await this.http.request<{ id?: string; email?: string }>({
+        method: 'GET',
+        path: '/users/me',
+        apiKey: this.apiKey,
+      })
+    } catch (err) {
+      const status = (err as NeonApiError).providerStatus
+      // Organization-scoped keys are refused here but are otherwise valid.
+      if (status !== 403 && status !== 404) throw err
+      organizationScoped = true
+    }
+
+    if (organizationScoped) {
+      // Proven by the call below: a response we can read means the key works.
+      await this.http.request<{ projects?: unknown[] }>({
+        method: 'GET',
+        path: '/projects',
+        query: { limit: 1 },
+        apiKey: this.apiKey,
+      })
+      return { organizations: [], organizationScoped: true }
+    }
+
     const orgs = await this.http
       .request<{ organizations: NeonOrganization[] }>({
         method: 'GET',
@@ -186,16 +223,23 @@ export class NeonControlPlane implements ControlPlaneAdapter {
         apiKey: this.apiKey,
       })
       .catch(() => ({ organizations: [] as NeonOrganization[] }))
-    return { accountId: me.id, organizations: (orgs.organizations ?? []).map(normalizeOrganization) }
+    return { accountId: me?.id, organizations: (orgs.organizations ?? []).map(normalizeOrganization) }
   }
 
+  /** Empty for organization-scoped keys, which cannot read the personal list. */
   async listOrganizations(): Promise<Organization[]> {
-    const { organizations } = await this.http.request<{ organizations: NeonOrganization[] }>({
-      method: 'GET',
-      path: '/users/me/organizations',
-      apiKey: this.apiKey,
-    })
-    return (organizations ?? []).map(normalizeOrganization)
+    try {
+      const { organizations } = await this.http.request<{ organizations: NeonOrganization[] }>({
+        method: 'GET',
+        path: '/users/me/organizations',
+        apiKey: this.apiKey,
+      })
+      return (organizations ?? []).map(normalizeOrganization)
+    } catch (err) {
+      const status = (err as NeonApiError).providerStatus
+      if (status === 403 || status === 404) return []
+      throw err
+    }
   }
 
   async listProjects(orgId?: string): Promise<Project[]> {
@@ -389,6 +433,37 @@ export class NeonControlPlane implements ControlPlaneAdapter {
       apiKey: this.apiKey,
     })
     return parseConnectionUri(res.uri)
+  }
+
+  /**
+   * Credential-bearing URI for opening a SQL session from an API key. The caller
+   * is responsible for validating the host and keeping the value server-side.
+   */
+  async getConnectionUri(input: {
+    projectId: string
+    databaseName: string
+    branchId?: string
+    role?: string
+    pooled?: boolean
+  }): Promise<string> {
+    const query: Record<string, string> = { database_name: input.databaseName }
+    if (input.branchId) query.branch_id = input.branchId
+    if (input.role) query.role_name = input.role
+    if (input.pooled !== undefined) query.pooled = input.pooled ? 'true' : 'false'
+    const res = await this.http.request<{ uri: string }>({
+      method: 'GET',
+      path: `/projects/${encodeURIComponent(input.projectId)}/connection_uri`,
+      query,
+      apiKey: this.apiKey,
+    })
+    if (!res?.uri || typeof res.uri !== 'string') {
+      throw new AppError({
+        code: 'PROVIDER_ERROR',
+        message: 'Neon did not return a connection URI for that database',
+        detail: 'connection_uri response missing uri',
+      })
+    }
+    return res.uri
   }
 
   async getOperation(input: { operationId: string; projectId?: string }): Promise<ProviderOperation> {

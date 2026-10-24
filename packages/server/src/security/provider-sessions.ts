@@ -11,6 +11,10 @@ export interface ConnectionMetadataView {
   readOnly: boolean
   /** Optional operator label; never a credential. */
   displayName?: string
+  projectId?: string
+  projectName?: string
+  branchId?: string
+  branchName?: string
 }
 
 export interface ProviderSession {
@@ -131,10 +135,14 @@ export class ProviderSessionManager {
     if (!s.primaryQuerySession) {
       const provider = this.getProvider(s.providerId)
       if (!provider || !s.connection) {
+        // Not UNAUTHORIZED: the dashboard session is perfectly valid, this
+        // connection mode simply has no SQL surface. A 401 here made the client
+        // treat an API-key session as a lost connection and drop the operator
+        // back to the connect screen on their first click of any data page.
         throw new AppError({
-          code: 'UNAUTHORIZED',
+          code: s.accountOnly ? 'FEATURE_UNAVAILABLE' : 'UNAUTHORIZED',
           message: s.accountOnly
-            ? 'This connection manages Neon resources only and cannot run SQL. Connect with a database URL to use the SQL tools.'
+            ? 'No database is attached to this session yet. Open the Databases page and choose “Use database” to run SQL, browse data or manage the schema.'
             : 'No live database connection is available',
         })
       }
@@ -143,6 +151,48 @@ export class ProviderSessionManager {
       s.activeQuerySessions.add(qs)
     }
     return { session: s, qs: s.primaryQuerySession, shared: true }
+  }
+
+  /**
+   * Bind a database connection to an existing session (API-key mode picking a
+   * project/branch/database). Any previous connection is closed first so a
+   * switch never leaks a pool or keeps querying the wrong database.
+   */
+  async attachConnection(
+    reference: string,
+    userId: number | null,
+    input: {
+      connection: ConnectionRef<unknown>
+      metadata: ConnectionMetadataView
+      secretHints: readonly string[]
+    },
+  ): Promise<ProviderSession> {
+    const s = this.require(reference, userId)
+    const previous = s.connection
+    if (previous) {
+      await this.closeQuerySessions(s)
+      const provider = this.getProvider(s.providerId)
+      await provider?.disconnect(previous).catch(() => undefined)
+    }
+    s.connection = input.connection
+    s.accountOnly = false
+    s.metadata = input.metadata
+    s.secretHints = [...new Set([...s.secretHints, ...input.secretHints.filter((v) => v.length > 0)])]
+    return s
+  }
+
+  /** Drop the database connection but keep the control-plane credential alive. */
+  async detachConnection(reference: string, userId: number | null): Promise<ProviderSession> {
+    const s = this.require(reference, userId)
+    const previous = s.connection
+    if (previous) {
+      await this.closeQuerySessions(s)
+      const provider = this.getProvider(s.providerId)
+      await provider?.disconnect(previous).catch(() => undefined)
+    }
+    s.connection = null
+    s.accountOnly = true
+    return s
   }
 
   /** Close the persistent query session (used for transaction reset). */

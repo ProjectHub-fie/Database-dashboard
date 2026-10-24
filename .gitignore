@@ -33,3 +33,6 @@ logs/
 *.tsbuildinfo
 .vercel
 .env*
+
+# Local runtime state (see scripts/serve-live.sh)
+.runtime/

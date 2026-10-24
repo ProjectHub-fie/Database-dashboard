@@ -89,10 +89,16 @@ export function anonymousSession(store: AnonymousSessionStore, authRequired = co
     const raw = req.cookies?.[ANON_COOKIE]
     const { session, isNew } = store.resolve(typeof raw === 'string' ? raw : undefined)
 
-    if (isNew) {
-      const opts = cookieOptions(req)
-      res.cookie(ANON_COOKIE, session.ref, opts)
-      // Readable by design: the client echoes it back in `x-csrf-token`.
+    const opts = cookieOptions(req)
+    if (isNew) res.cookie(ANON_COOKIE, session.ref, opts)
+    // Re-issue whenever the browser does not already hold this exact token.
+    // Only setting it for a brand-new session left a broken state: logout clears
+    // `dbh_csrf` but the signature-valid `dbh_anon` survives, so every later
+    // request resolved isNew=false, the server kept demanding a token derived
+    // from the ref, and the client had no copy to echo — every write returned
+    // 403 "Invalid or missing CSRF token" until the anon cookie aged out.
+    // Readable by design: the client echoes it back in `x-csrf-token`.
+    if (isNew || req.cookies?.[ANON_CSRF_COOKIE] !== session.csrf) {
       res.cookie(ANON_CSRF_COOKIE, session.csrf, { ...opts, httpOnly: false })
     }
 

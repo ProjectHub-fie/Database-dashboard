@@ -50,6 +50,8 @@ interface Preview {
 
 interface ApiConnection {
   organizations?: Array<{ id: string; name: string }>
+  /** Set when Neon refused /users/me because the key belongs to an organization. */
+  organizationScoped?: boolean
 }
 
 export function LoginPage() {
@@ -84,6 +86,7 @@ export function LoginPage() {
   const [apiName, setApiName] = useState('')
   const [showKey, setShowKey] = useState(false)
   const [orgs, setOrgs] = useState<Array<{ id: string; name: string }> | null>(null)
+  const [orgScoped, setOrgScoped] = useState(false)
 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -233,6 +236,7 @@ export function LoginPage() {
     setError(null)
     setNotice(null)
     setOrgs(null)
+    setOrgScoped(false)
     setBusy(true)
     try {
       const res = await api.post<ConnectionStatus & ApiConnection>('/api/connections/api', {
@@ -241,7 +245,14 @@ export function LoginPage() {
         ...(apiName.trim() ? { displayName: apiName.trim() } : {}),
       })
       setOrgs(res.organizations ?? [])
-      toast('success', 'API key verified', `${res.organizations?.length ?? 0} organization(s) visible to this key`)
+      setOrgScoped(res.organizationScoped === true)
+      toast(
+        'success',
+        'API key verified',
+        res.organizationScoped
+          ? 'Organization-scoped key accepted'
+          : `${res.organizations?.length ?? 0} organization(s) visible to this key`,
+      )
       await auth.reloadConnection()
       setApiKey('')
     } catch (err) {
@@ -401,6 +412,7 @@ export function LoginPage() {
                 busy={busy}
                 supported={apiSupported}
                 orgs={orgs}
+                orgScoped={orgScoped}
                 onSubmit={connectApi}
                 onSignIn={requireSignIn}
                 onOpen={() => nav('/overview', { replace: true })}
@@ -736,6 +748,8 @@ function ApiPanel(props: {
   busy: boolean
   supported: boolean
   orgs: Array<{ id: string; name: string }> | null
+  /** True when Neon refused /users/me because the key belongs to an organization. */
+  orgScoped: boolean
   onSubmit: (e: FormEvent) => void
   onSignIn: () => void
   onOpen: () => void
@@ -804,13 +818,15 @@ function ApiPanel(props: {
               <CircleCheck className="h-3.5 w-3.5" /> API key verified
             </div>
             <p className="mt-1.5 text-[11.5px] text-slate-700 dark:text-slate-300">
-              {props.orgs.length === 0
-                ? 'This key can see your personal account but no organizations.'
-                : `${props.orgs.length} organization(s): ${props.orgs.map((o) => o.name).join(', ')}`}
+              {props.orgScoped
+                ? 'Organization-scoped key. Neon does not let these read account-level details, so projects are listed directly.'
+                : props.orgs.length === 0
+                  ? 'This key can see your personal account but no organizations.'
+                  : `${props.orgs.length} organization(s): ${props.orgs.map((o) => o.name).join(', ')}`}
             </p>
             <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
-              Control-plane access only — no SQL connection is open yet. Pick a project, branch and
-              database in the dashboard to query one.
+              The key manages Neon resources. To run SQL you also attach a database: open
+              Databases, then choose “Use database” on the one you want.
             </p>
             <Button type="button" size="sm" onClick={props.onOpen} className="mt-2.5">
               Open dashboard <ArrowRight className="h-3.5 w-3.5" />

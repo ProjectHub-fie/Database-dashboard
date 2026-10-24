@@ -16,6 +16,7 @@ export type ErrorCode =
   | 'RATE_LIMITED'
   | 'CONNECTION_FAILED'
   | 'CONNECTION_UNSUPPORTED_HOST'
+  | 'FEATURE_UNAVAILABLE'
   | 'TLS_ERROR'
   | 'QUERY_TIMEOUT'
   | 'QUERY_CANCELLED'
@@ -65,6 +66,7 @@ function statusForCode(code: ErrorCode): number {
       return 401
     case 'FORBIDDEN':
     case 'CONFIRMATION_REQUIRED':
+    case 'FEATURE_UNAVAILABLE':
       return 403
     case 'NOT_FOUND':
       return 404
@@ -157,6 +159,7 @@ export const ERROR_LABELS: Record<ErrorCode, string> = {
   RATE_LIMITED: 'Rate limited',
   CONNECTION_FAILED: 'Connection failed',
   CONNECTION_UNSUPPORTED_HOST: 'Unsupported host',
+  FEATURE_UNAVAILABLE: 'Feature unavailable for this connection',
   TLS_ERROR: 'TLS error',
   QUERY_TIMEOUT: 'Query timed out',
   QUERY_CANCELLED: 'Query cancelled',

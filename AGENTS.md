@@ -60,6 +60,21 @@ implemented provider. Build commands:
   success.
 ## Gotchas found in practice
 
+- **Organization-scoped Neon API keys get 404 on `GET /users/me`.** Neon returns
+  404 "not allowed for organization API keys", not 401. Treating that as an
+  invalid credential rejects perfectly good keys. `validateApiKey()` confirms
+  such keys via `/projects` and returns `organizationScoped: true`; only a real
+  401 fails validation.
+- **A connection session can vanish mid-session.** Idle expiry, a backend
+  restart, or a failover to an instance that never held the pool all produce
+  `401 UNAUTHORIZED`. The client emits `onConnectionLost()` for non-auth 401s,
+  `AuthContext` clears `connected`, and `RequireConnection` returns the user to
+  `/connect`. Never render dashboard chrome from a cached status without it.
+- **Advertise only capabilities the current auth can actually use.**
+  `capabilitiesForAuth(caps, 'connection')` strips `control.*` and
+  `monitoring.*`; without it a database-URL session shows provider-management
+  navigation that the server answers with 401.
+
 - **`Set` never survives JSON — capability ids must be serialized explicitly.**
   Providers declare `capabilities` as a `ReadonlySet<Capability>`;
   `JSON.stringify(new Set([...]))` is `{}`, so any endpoint returning the raw
@@ -102,3 +117,22 @@ implemented provider. Build commands:
   `API_ORIGIN`; the Express API needs a persistent host because sessions are
   SQLite-backed and connection pools/secrets are in-memory. Keep the
   `/api/` exclusion in the SPA rewrite, otherwise API paths return `index.html`.
+
+- **`UNAUTHORIZED` on a non-auth route means "session lost" to the client.**
+  `lib/api.ts` turns any 401 into `onConnectionLost()`, which clears the
+  connection and bounces the operator to `/connect`. Never use 401 to signal
+  "this connection mode lacks that feature" — use `FEATURE_UNAVAILABLE` (403),
+  as `allocatePrimary` does for `accountOnly` API-key sessions. A 401 there made
+  API-key sessions log themselves out on the first click of any data page.
+  Nav sections that need a live SQL connection carry `needsDatabase` so they are
+  hidden, not offered-and-failing, in API-key mode.
+- **`dbh_csrf` must be re-issued, not only minted.** `anonymousSession` writes
+  the cookie when the browser does not already hold the token derived from its
+  session ref. Setting it only on `isNew` broke sign-out → sign-in: logout
+  clears `dbh_csrf` but leaves the still-valid `dbh_anon`, so nothing ever
+  re-sent the token and every later write was a 403 until the anon cookie aged
+  out. Guarded by `anonymous-mode.test.ts`.
+- **`POST /api/connections/preview` never opens a connection.** It validates URL
+  shape, host allowlist and DNS pinning only, then returns metadata; a wrong
+  password is not caught until `POST /api/connections/url`. The UI labels it
+  "Test connection", so copy must not imply the credential was verified.
