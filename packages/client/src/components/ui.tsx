@@ -26,22 +26,22 @@ export function Button({
 } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const styles = {
     primary:
-      'bg-indigo-600 text-white hover:bg-indigo-500 focus-visible:outline-indigo-600 disabled:bg-indigo-300 dark:disabled:bg-indigo-800',
+      'bg-slate-900 text-white hover:bg-slate-800 focus-visible:outline-slate-900 disabled:bg-slate-300 disabled:text-white dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 dark:disabled:bg-slate-700 dark:disabled:text-slate-400',
     secondary:
-      'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 focus-visible:outline-slate-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700',
+      'border border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:bg-slate-800',
     ghost:
-      'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700/60',
+      'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800',
     danger:
-      'bg-rose-600 text-white hover:bg-rose-500 focus-visible:outline-rose-600 disabled:bg-rose-300',
+      'bg-rose-600 text-white hover:bg-rose-500 focus-visible:outline-rose-600 disabled:bg-rose-300 dark:disabled:bg-rose-900',
   }[variant]
   const sizes = {
-    sm: 'px-2.5 py-1.5 text-xs',
-    md: 'px-3.5 py-2 text-sm',
+    sm: 'h-8 px-2.5 text-xs',
+    md: 'h-9 px-3.5 text-sm',
   }[size]
   return (
     <button
       className={cn(
-        'inline-flex items-center justify-center gap-2 rounded-lg font-medium shadow-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed',
+        'inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-lg text-[13px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed',
         styles,
         sizes,
         className,
@@ -57,14 +57,14 @@ export function Button({
 
 export function Card({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={cn('rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800', className)}>
+    <div className={cn('rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900', className)}>
       {children}
     </div>
   )
 }
 
 export function Skeleton({ className }: { className?: string }) {
-  return <div className={cn('animate-pulse rounded-md bg-slate-200 dark:bg-slate-700', className)} />
+  return <div className={cn('animate-pulse rounded-md bg-slate-100 dark:bg-slate-800', className)} />
 }
 
 export function EmptyState({
@@ -79,7 +79,7 @@ export function EmptyState({
   action?: ReactNode
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 px-6 py-12 text-center dark:border-slate-600">
+    <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-200 px-6 py-14 text-center dark:border-slate-800">
       {icon ?? <Inbox className="h-10 w-10 text-slate-300 dark:text-slate-600" />}
       <p className="mt-1 text-sm font-semibold text-slate-800 dark:text-slate-100">{title}</p>
       {description ? <p className="max-w-sm text-xs text-slate-500 dark:text-slate-400">{description}</p> : null}
@@ -96,7 +96,7 @@ export function Badge({
   tone?: 'slate' | 'green' | 'amber' | 'rose' | 'sky' | 'indigo'
 }) {
   const tones = {
-    slate: 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200',
+    slate: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
     green: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300',
     amber: 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300',
     rose: 'bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300',
@@ -104,7 +104,7 @@ export function Badge({
     indigo: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300',
   }[tone]
   return (
-    <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium', tones)}>
+    <span className={cn('inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset ring-black/5 dark:ring-white/10', tones)}>
       {children}
     </span>
   )
@@ -145,15 +145,15 @@ export function Modal({
   }, [open])
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 backdrop-blur-sm sm:p-8">
+    <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-slate-950/30 p-4 backdrop-blur-[2px] sm:p-8">
       <div
         ref={ref}
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
-        className={cn('my-auto w-full rounded-2xl border border-slate-200 bg-white shadow-2xl focus:outline-none dark:border-slate-700 dark:bg-slate-800', width)}
+        className={cn('my-auto w-full rounded-xl border border-slate-200 bg-white shadow-[0_24px_60px_-24px_rgba(9,9,11,0.35)] focus:outline-none dark:border-slate-800 dark:bg-slate-900', width)}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 dark:border-slate-700">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 dark:border-slate-800">
           <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">{title}</h2>
           {!hideClose && (
             <button
@@ -167,7 +167,7 @@ export function Modal({
         </div>
         <div className="px-5 py-4">{children}</div>
         {footer ? (
-          <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-3 dark:border-slate-700">{footer}</div>
+          <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-3 dark:border-slate-800">{footer}</div>
         ) : null}
       </div>
     </div>
@@ -246,7 +246,7 @@ export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
     <input
       {...props}
       className={cn(
-        'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500',
+        'h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-600 dark:focus:border-slate-500 dark:focus:ring-white/10',
         props.className,
       )}
     />
@@ -258,7 +258,7 @@ export function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement
     <textarea
       {...props}
       className={cn(
-        'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500',
+        'h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-600 dark:focus:border-slate-500 dark:focus:ring-white/10',
         props.className,
       )}
     />
@@ -270,7 +270,7 @@ export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
     <select
       {...props}
       className={cn(
-        'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100',
+        'h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100',
         props.className,
       )}
     />
@@ -278,7 +278,11 @@ export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
 }
 
 export function Label({ children }: { children: ReactNode }) {
-  return <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">{children}</label>
+  return (
+    <label className="mb-1.5 block text-xs font-medium tracking-wide text-slate-600 dark:text-slate-400">
+      {children}
+    </label>
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -288,7 +292,7 @@ export function Label({ children }: { children: ReactNode }) {
 export function Table({ headers, rows, empty }: { headers: ReactNode[]; rows: ReactNode[][]; empty?: ReactNode }) {
   if (rows.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-600 dark:text-slate-400">
+      <div className="rounded-xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
         {empty ?? 'No rows'}
       </div>
     )
@@ -297,9 +301,9 @@ export function Table({ headers, rows, empty }: { headers: ReactNode[]; rows: Re
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-left text-sm">
         <thead>
-          <tr className="border-b border-slate-200 dark:border-slate-700">
+          <tr className="border-b border-slate-200 dark:border-slate-800">
             {headers.map((h, i) => (
-              <th key={i} className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              <th key={i} className="px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-500">
                 {h}
               </th>
             ))}
@@ -309,7 +313,7 @@ export function Table({ headers, rows, empty }: { headers: ReactNode[]; rows: Re
           {rows.map((r, i) => (
             <tr
               key={i}
-              className="border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50 dark:border-slate-700/50 dark:hover:bg-slate-700/40"
+              className="border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50/70 dark:border-slate-800/70 dark:hover:bg-slate-800/40"
             >
               {r.map((cell, j) => (
                 <td key={j} className="px-3 py-2 align-top text-slate-700 dark:text-slate-200">

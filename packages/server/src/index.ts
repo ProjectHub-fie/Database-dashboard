@@ -48,7 +48,9 @@ export async function createApp(): Promise<{
   const app = express()
   installContext(app, ctx)
   app.disable('x-powered-by')
-  app.set('trust proxy', config.trustProxy)
+  // Trust exactly the configured number of proxy hops; trusting the whole
+  // X-Forwarded-For chain would let clients forge their address.
+  app.set('trust proxy', config.trustProxy ? config.trustProxyHops : false)
 
   app.use(
     helmet({
@@ -133,7 +135,7 @@ export async function createApp(): Promise<{
 
   // Serve built frontend in production.
   const dist = path.resolve(__dirname, '../../client/dist')
-  if (config.nodeEnv === 'production') {
+  if (config.serveClient) {
     app.use(express.static(dist))
     app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(path.join(dist, 'index.html')))
   }

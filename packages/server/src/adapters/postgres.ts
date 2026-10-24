@@ -511,7 +511,7 @@ export class PostgresAdapter implements DatabaseAdapter<PgConn> {
              ARRAY(SELECT rm.rolname
                    FROM pg_catalog.pg_auth_members m
                    JOIN pg_catalog.pg_roles rm ON rm.oid = m.roleid
-                   WHERE m.member = r.oid) AS member_of,
+                   WHERE m.member = r.oid)::text[] AS member_of,
              ARRAY[
                r.rolsuper, r.rolcreatedb, r.rolcreaterole, r.rolinherit,
                r.rolcanlogin, r.rolreplication, r.rolbypassrls
@@ -649,7 +649,7 @@ export class PostgresAdapter implements DatabaseAdapter<PgConn> {
                a.attlen AS max_length,
                CASE WHEN nd.nspname = 'pg_catalog' AND t.typtype = 'e'
                  THEN (SELECT ARRAY(SELECT enumlabel FROM pg_catalog.pg_enum
-                                    WHERE enumtypid = a.atttypid ORDER BY enumsortorder))
+                                    WHERE enumtypid = a.atttypid ORDER BY enumsortorder))::text[]
                  ELSE NULL END AS enum_values
         FROM pg_catalog.pg_attribute a
         JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
@@ -713,7 +713,7 @@ export class PostgresAdapter implements DatabaseAdapter<PgConn> {
         SELECT con.conname AS name,
                ARRAY(SELECT a.attname FROM pg_catalog.unnest(con.conkey) WITH ORDINALITY AS k(attnum, ord)
                      JOIN pg_catalog.pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k.attnum
-                     ORDER BY k.ord) AS columns
+                     ORDER BY k.ord)::text[] AS columns
         FROM pg_catalog.pg_constraint con
         JOIN pg_catalog.pg_class c ON c.oid = con.conrelid
         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
@@ -734,7 +734,7 @@ export class PostgresAdapter implements DatabaseAdapter<PgConn> {
                ARRAY(SELECT a.attname FROM pg_catalog.unnest(ix.indkey) WITH ORDINALITY AS k(attnum, ord)
                      LEFT JOIN pg_catalog.pg_attribute a
                        ON a.attrelid = ix.indrelid AND a.attnum = k.attnum
-                     WHERE a.attnum > 0 ORDER BY k.ord) AS columns
+                     WHERE a.attnum > 0 ORDER BY k.ord)::text[] AS columns
         FROM pg_catalog.pg_index ix
         JOIN pg_catalog.pg_class idx ON idx.oid = ix.indexrelid
         JOIN pg_catalog.pg_class c ON c.oid = ix.indrelid

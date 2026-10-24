@@ -13,7 +13,9 @@ export interface AppConfig {
   uploadDir: string
   maxUploadBytes: number
   trustProxy: boolean
+  trustProxyHops: number
   dataDir: string
+  serveClient: boolean
 }
 
 function bool(v: string | undefined, dflt: boolean): boolean {
@@ -57,7 +59,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       : path.join(dataDir, 'uploads'),
     maxUploadBytes: int(env.MAX_UPLOAD_BYTES, 25 * 1024 * 1024),
     trustProxy: bool(env.TRUST_PROXY, false),
+    // A hop count, never `true`. `true` would trust the left-most X-Forwarded-For
+    // entry, which a client can forge to bypass IP rate limiting.
+    trustProxyHops: Math.max(1, int(env.TRUST_PROXY_HOPS, 1)),
     dataDir,
+    // Static SPA hosting is on by default in production. The override exists so
+    // staging/self-hosted dev boxes can serve the built client from this server.
+    serveClient: bool(env.SERVE_CLIENT, nodeEnv === 'production'),
   }
 }
 

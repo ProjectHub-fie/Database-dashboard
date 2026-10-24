@@ -47,6 +47,30 @@ function Shell({ children }: { children: React.ReactNode }) {
   )
 }
 
+/**
+ * Authenticated route rendered without the dashboard chrome. Used by the
+ * connection screen, which is a standalone landing page.
+ */
+function BareRoute({ children }: { children: React.ReactNode }) {
+  const auth = useAuth()
+  const location = useLocation()
+
+  if (auth.me === null) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <Spinner className="h-8 w-8" />
+      </div>
+    )
+  }
+  if (!auth.me.authenticated) {
+    return <Navigate to="/login" state={{ from: location.pathname }} replace />
+  }
+  if (auth.connection?.connected) {
+    return <Navigate to="/overview" replace />
+  }
+  return <>{children}</>
+}
+
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const auth = useAuth()
   if (auth.me === null) {
@@ -79,9 +103,9 @@ export default function App() {
       <Route
         path="/connect"
         element={
-          <Shell>
+          <BareRoute>
             <ConnectPage />
-          </Shell>
+          </BareRoute>
         }
       />
       <Route

@@ -1,3 +1,5 @@
+import { ZodError } from 'zod'
+
 /**
  * Typed application errors. Each error carries a safe, user-facing message
  * plus an optional internal detail that is only written to server logs, never
@@ -129,6 +131,17 @@ export function isClientError(e: unknown): boolean {
 
 export function asAppError(e: unknown): AppError {
   if (e instanceof AppError) return e
+  // Schema failures are caller mistakes, not server faults: report 400 with the
+  // offending field paths instead of a 500 that exposes the schema internals.
+  if (e instanceof ZodError) {
+    const fields = e.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`).join('; ')
+    return new AppError({
+      code: 'BAD_REQUEST',
+      message: `Invalid request: ${fields.slice(0, 300)}`,
+      detail: fields,
+      cause: e,
+    })
+  }
   const message = e instanceof Error ? e.message : 'Unexpected error'
   return new AppError({ code: 'INTERNAL', message: 'Internal server error', detail: message, cause: e })
 }
