@@ -9,6 +9,13 @@ import { requestReauth } from './reauth'
 
 const CSRF_COOKIE = 'dbh_csrf'
 
+/**
+ * Optional API origin for split deployments (static frontend on Vercel, API
+ * elsewhere). Empty means same-origin, which is the default. This is a public
+ * URL only — credentials are never configured client-side.
+ */
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
+
 function readCookie(name: string): string | undefined {
   const m = document.cookie.match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`))
   return m ? decodeURIComponent(m[1]) : undefined
@@ -36,7 +43,7 @@ export interface RequestOptions {
 
 async function doRequest<T>(path: string, opts: RequestOptions): Promise<T> {
   const { method = 'GET', query, body, timeoutMs = 60_000 } = opts
-  let url = path
+  let url = `${API_BASE}${path}`
   if (query) {
     const q = new URLSearchParams()
     for (const [k, v] of Object.entries(query)) {
@@ -63,7 +70,9 @@ async function doRequest<T>(path: string, opts: RequestOptions): Promise<T> {
     const res = await fetch(url, {
       method,
       headers,
-      credentials: 'same-origin',
+      // `include` is required for split-origin deployments (static frontend on
+      // Vercel, API elsewhere); same-origin requests behave identically.
+      credentials: 'include',
       body: body !== undefined ? JSON.stringify(body) : undefined,
       signal: controller.signal,
     })

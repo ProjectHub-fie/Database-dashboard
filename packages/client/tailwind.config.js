@@ -1,11 +1,46 @@
 /** @type {import('tailwindcss').Config} */
+
+// Neutral monochrome ramp. The product uses one near-black accent instead of a
+// saturated brand hue, so `indigo-*` (the accent family used across the app)
+// resolves to this ramp. `slate-*` is remapped to the same neutral family so
+// surfaces stay neutral rather than blue-tinted.
+const neutral = {
+  50: '#fafafa',
+  100: '#f4f4f5',
+  200: '#e4e4e7',
+  300: '#d4d4d8',
+  400: '#a1a1aa',
+  500: '#71717a',
+  600: '#52525b',
+  700: '#3f3f46',
+  800: '#27272a',
+  900: '#18181b',
+  950: '#09090b',
+}
+
+const accent = {
+  50: '#fafafa',
+  100: '#f4f4f5',
+  200: '#e4e4e7',
+  300: '#a1a1aa',
+  400: '#71717a',
+  500: '#3f3f46',
+  600: '#18181b',
+  700: '#27272a',
+  800: '#27272a',
+  900: '#18181b',
+  950: '#09090b',
+}
+
 export default {
   darkMode: 'class',
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
       colors: {
-        // Design tokens shared with the backend-provided theme palette.
+        slate: neutral,
+        zinc: neutral,
+        indigo: accent,
         brand: {
           50: 'var(--c-brand-50)',
           100: 'var(--c-brand-100)',

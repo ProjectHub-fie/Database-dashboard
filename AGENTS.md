@@ -58,3 +58,18 @@ implemented provider. Build commands:
 - Delete responses include `operations[]`; creation endpoints return
   `operations[]` too. Poll until `finished`/`failed`/`error` before reporting
   success.
+## Gotchas found in practice
+
+- **`pg` does not decode `name[]` (oid 1003).** Catalog queries that aggregate
+  `pg_attribute.attname` or `pg_class.relname` into arrays return raw literals
+  (`{email}`) instead of `string[]`. Always cast those subqueries to `::text[]`
+  (see the `member_of`, `enum_values`, unique-constraint and index-column
+  queries in `src/adapters/postgres.ts`). `postgres-catalog.test.ts` guards it.
+- **`asAppError()` must map `ZodError` to `BAD_REQUEST`.** Otherwise a request
+  body that fails schema validation falls through to `INTERNAL` and returns 500
+  with schema internals. Route handlers should validate with Zod and let
+  `asAppError` translate.
+- **Vercel hosts the SPA only.** `api/[...path].ts` reverse-proxies `/api/*` to
+  `API_ORIGIN`; the Express API needs a persistent host because sessions are
+  SQLite-backed and connection pools/secrets are in-memory. Keep the
+  `/api/` exclusion in the SPA rewrite, otherwise API paths return `index.html`.

@@ -29,3 +29,5 @@ logs/
 
 # Tests
 .agent_tmp/
+# TypeScript incremental build info
+*.tsbuildinfo

@@ -52,22 +52,23 @@ const NAV: NavItem[] = [
   { to: '/security', label: 'Security & Audit', icon: <ShieldCheck className="h-4 w-4" /> },
 ]
 
-function SidebarLink({ item, onClick }: { item: NavItem; onClick?: () => void }) {
+function SidebarLink({ item, onClick, collapsed }: { item: NavItem; onClick?: () => void; collapsed?: boolean }) {
   return (
     <NavLink
       to={item.to}
       onClick={onClick}
       className={({ isActive }) =>
         cn(
-          'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+          'group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors',
+          collapsed && 'justify-center px-0',
           isActive
-            ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300'
-            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700/60 dark:hover:text-slate-100',
+            ? 'bg-slate-100 font-medium text-slate-900 dark:bg-slate-800 dark:text-white'
+            : 'font-normal text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-100',
         )
       }
     >
       {item.icon}
-      <span className="flex-1 truncate">{item.label}</span>
+      {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
     </NavLink>
   )
 }
@@ -88,22 +89,33 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const sidebar = (onNav?: () => void) => (
     <div className="flex h-full flex-col">
-      <div className="flex h-14 shrink-0 items-center justify-between px-4">
+      <div className={cn('flex h-14 shrink-0 items-center gap-2', collapsed ? 'justify-center px-2' : 'px-3')}>
         {!collapsed && (
-          <div className="flex items-center gap-2 font-semibold text-slate-900 dark:text-slate-100">
-            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-indigo-600 text-xs font-bold text-white">DB</span>
-            <span>DB Horizon</span>
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-white dark:bg-white dark:text-slate-900">
+              <Database className="h-4 w-4" />
+            </span>
+            <div className="min-w-0 leading-tight">
+              <p className="truncate text-[13px] font-semibold tracking-tight text-slate-900 dark:text-white">DB Horizon</p>
+              <p className="truncate text-[10px] text-slate-500 dark:text-slate-400">Database Management</p>
+            </div>
           </div>
         )}
         {!collapsed && (
           <button
             onClick={() => setPaletteOpen(true)}
-            className="hidden items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-400 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-700 lg:flex"
+            aria-label="Open command palette"
+            title="Search (Ctrl K)"
+            className="ml-auto hidden shrink-0 rounded-md border border-slate-200 p-1.5 text-slate-400 transition-colors hover:border-slate-300 hover:text-slate-700 lg:flex dark:border-slate-800 dark:hover:border-slate-700 dark:hover:text-slate-200"
           >
-            <Command className="h-3 w-3" /> Ctrl K
+            <Command className="h-3.5 w-3.5" />
           </button>
         )}
-        {collapsed && <div />}
+        {collapsed && (
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-white dark:bg-white dark:text-slate-900">
+            <Database className="h-4 w-4" />
+          </span>
+        )}
         {!collapsed && (
           <button onClick={() => setDrawerOpen(false)} aria-label="Close navigation" className="rounded p-1 text-slate-400 hover:bg-slate-100 lg:hidden">
             <X className="h-4 w-4" />
@@ -112,22 +124,22 @@ export function AppShell({ children }: { children: ReactNode }) {
       </div>
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-2" aria-label="Sidebar">
         {visibleNav.map((item) => (
-          <SidebarLink key={item.to} item={item} onClick={onNav} />
+          <SidebarLink key={item.to} item={item} onClick={onNav} collapsed={collapsed} />
         ))}
       </nav>
-      <div className="shrink-0 border-t border-slate-200 p-2 dark:border-slate-700">
+      <div className="shrink-0 border-t border-slate-100 p-2 dark:border-slate-800">
         <ConnectionPill />
       </div>
     </div>
   )
 
   return (
-    <div className="flex min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100">
+    <div className="flex min-h-screen bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       {/* Desktop sidebar */}
       <aside
         className={cn(
-          'hidden shrink-0 border-r border-slate-200 bg-white transition-[width] duration-200 lg:block dark:border-slate-700 dark:bg-slate-800',
-          collapsed ? 'w-14' : 'w-64',
+          'hidden shrink-0 border-r border-slate-200 bg-white transition-[width] duration-200 lg:block dark:border-slate-800 dark:bg-slate-950',
+          collapsed ? 'w-[60px]' : 'w-[248px]',
         )}
       >
         {sidebar()}
@@ -137,7 +149,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       {drawerOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-slate-900/40" onClick={() => setDrawerOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 w-72 border-r border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-800">
+          <aside className="absolute inset-y-0 left-0 w-[268px] border-r border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
             {sidebar(() => setDrawerOpen(false))}
           </aside>
         </div>
@@ -145,7 +157,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Topbar */}
-        <header className="flex h-14 shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-3 dark:border-slate-700 dark:bg-slate-800">
+        <header className="flex h-14 shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-3 sm:px-4 dark:border-slate-800 dark:bg-slate-950">
           <button onClick={() => setDrawerOpen(true)} aria-label="Open navigation" className="rounded p-1.5 text-slate-500 hover:bg-slate-100 lg:hidden">
             <Menu className="h-5 w-5" />
           </button>
@@ -160,7 +172,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             {crumbs.map((c, i) => (
               <span key={i} className="flex items-center gap-1 text-sm">
                 {i > 0 && <ChevronRight className="h-3 w-3 text-slate-400" />}
-                <span className={i === crumbs.length - 1 ? 'font-medium text-slate-900 dark:text-slate-100' : 'text-slate-500 dark:text-slate-400'}>
+                <span className={i === crumbs.length - 1 ? 'font-medium text-slate-900 dark:text-white' : 'text-slate-400 dark:text-slate-500'}>
                   {c}
                 </span>
               </span>
@@ -170,28 +182,28 @@ export function AppShell({ children }: { children: ReactNode }) {
             <button
               onClick={() => setPaletteOpen(true)}
               aria-label="Command palette"
-              className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-700"
+              className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-xs text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-slate-800 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:text-white"
             >
               <Search className="h-3.5 w-3.5" /> Global
             </button>
             <button
               onClick={toggle}
               aria-label="Toggle theme"
-              className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+              className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
             >
               {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
             <button
               onClick={() => void auth.logout()}
               aria-label="Sign out"
-              className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+              className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
             >
               <LogOut className="h-4 w-4" />
             </button>
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto bg-slate-50/60 p-4 sm:p-6 dark:bg-slate-950">{children}</main>
       </div>
 
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} items={visibleNav} />}
@@ -234,9 +246,9 @@ function CommandPalette({
   const filtered = items.filter((i) => i.label.toLowerCase().includes(q.toLowerCase())).slice(0, 10)
   return (
     <div className="fixed inset-0 z-[90] flex items-start justify-center pt-24">
-      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-800">
-        <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+      <div className="absolute inset-0 bg-slate-950/30 backdrop-blur-[2px]" onClick={onClose} />
+      <div className="relative w-full max-w-md overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_24px_60px_-24px_rgba(9,9,11,0.35)] dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
           <Search className="h-4 w-4 text-slate-400" />
           <input
             autoFocus
@@ -255,7 +267,7 @@ function CommandPalette({
               key={item.to}
               to={item.to}
               onClick={onClose}
-              className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
+              className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
             >
               {item.icon}
               {item.label}

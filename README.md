@@ -78,6 +78,32 @@ npm run build        # typechecks + builds client and server
 npm run start        # NODE_ENV=production server; serves ./client/dist
 ```
 
+## Deploying the frontend to Vercel
+
+`vercel.json` builds `packages/client` and serves it as a static site, and
+`api/[...path].ts` proxies `/api/*` to the Express backend.
+
+The API itself **must run on a persistent host** (Railway, Fly.io, Render, a VM).
+It cannot be a Vercel Function: sessions live in SQLite on disk and each
+dashboard session holds live `pg` connection pools plus connection secrets in
+memory, none of which survive a serverless lifecycle or span invocations.
+
+1. Deploy the server (see [docs/OPERATIONS.md](docs/OPERATIONS.md)), publicly
+   reachable over HTTPS, with `NODE_ENV=production`, `TRUST_PROXY=true`,
+   `TRUST_PROXY_HOPS=1`, and `CORS_ORIGINS=https://<your-vercel-domain>`.
+2. Import the repo into Vercel and set one environment variable:
+
+   | Name | Value |
+   | --- | --- |
+   | `API_ORIGIN` | `https://your-server-host` (server-side only, no trailing slash) |
+
+3. Deploy. The browser only talks to the Vercel domain: session and CSRF cookies
+   stay first-party, and no CORS credentials are needed.
+
+`API_ORIGIN` is read from server-side configuration only, never from the request,
+so the proxy cannot be used as an open proxy or SSRF pivot. If it is unset the
+function returns `503 API_NOT_CONFIGURED` instead of falling through to HTML.
+
 ## First sign-in
 
 There is **no default password**. On first start, the server creates the initial
