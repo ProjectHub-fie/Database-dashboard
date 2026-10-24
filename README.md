@@ -184,7 +184,7 @@ The suite currently includes:
 | `adapters/engine-dialect.test.ts` | dialect boundary (2 tests) |
 | `lib/provider-catalog.test.ts` (client) | provider selector fallback when the catalog request fails (11 tests) |
 
-**95/95 pass**, plus `tsc` clean on both packages and both production builds.
+**103/103 pass**, plus `tsc` clean on both packages and both production builds.
 `npm test` at the repo root runs both packages.
 
 Runtime database and Neon API calls are mocked only in tests; the real
@@ -207,3 +207,24 @@ application uses genuine PostgreSQL connections and Neon API v2 responses.
 > who already possesses a leaked database URL or API key from connecting to your
 > resources directly. Rotate credentials when they may have leaked — see
 > [docs/OPERATIONS.md](docs/OPERATIONS.md).
+## Authentication is temporarily optional
+
+The account system is fully implemented but **not yet enforced by default**:
+`AUTH_REQUIRED=false` lets anyone open a database URL / Neon API key connection
+without signing in. Set `AUTH_REQUIRED=true` in the server environment to restore
+the full "sign-in before connect" behaviour — no code changes needed.
+
+What still holds while auth is disabled:
+
+- Credentials remain server-side, in memory only, keyed by a per-browser
+  anonymous session cookie (HttpOnly, 192-bit random ref). Two visitors never
+  share a connection pool, and knowing one ref reveals nothing about another.
+- CSRF double-submit still protects every state-changing request.
+- Saved queries and the audit log stay account-only and return a clear error to
+  anonymous visitors.
+- Destructive actions still require typed confirmation and (where applicable)
+  recent reauthentication — reauthentication is skipped only because an
+  anonymous session has no password to re-enter.
+
+The "Dashboard account" tab continues to exist and works exactly as before; it
+is simply no longer a required gate until `AUTH_REQUIRED=true`.

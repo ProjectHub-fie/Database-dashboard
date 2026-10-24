@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express'
 import { z } from 'zod'
 import { AppError } from '../lib/errors.js'
 import { ctxOf } from './context.js'
-import { requireRecentAuth } from './middleware.js'
+import { requireRecentAuth, actorId } from './middleware.js'
 
 const createDatabaseSchema = z.object({
   projectId: z.string().min(1).max(100),
@@ -34,7 +34,7 @@ export function controlPlaneRouter(): Router {
   function control(req: Request, res: Response) {
     const ctx = ctxOf(req)
     const sessionRef = String(res.locals.sessionRef ?? '')
-    const session = ctx.providerSessions.require(sessionRef, Number(res.locals.userId))
+    const session = ctx.providerSessions.require(sessionRef, actorId(res))
     if (session.auth !== 'api' || !session.controlPlane) {
       throw new AppError({
         code: 'FORBIDDEN',
@@ -86,7 +86,7 @@ export function controlPlaneRouter(): Router {
     if (!parsed.success) throw new AppError({ code: 'BAD_REQUEST', message: 'Invalid project payload' })
     const { project, operation } = await cp.createProject(parsed.data)
     ctx.audit.write({
-      userId: Number(res.locals.userId),
+      userId: actorId(res),
       sessionId: sessionRef,
       event: 'control.create_project',
       status: 'ok',
@@ -109,7 +109,7 @@ export function controlPlaneRouter(): Router {
     }
     const { operation } = await cp.deleteProject({ projectId })
     ctx.audit.write({
-      userId: Number(res.locals.userId),
+      userId: actorId(res),
       sessionId: sessionRef,
       event: 'control.delete_project',
       status: 'ok',
@@ -136,7 +136,7 @@ export function controlPlaneRouter(): Router {
     if (!parsed.success) throw new AppError({ code: 'BAD_REQUEST', message: 'Invalid branch payload' })
     const { branch, operation } = await cp.createBranch({ projectId, ...parsed.data })
     ctx.audit.write({
-      userId: Number(res.locals.userId),
+      userId: actorId(res),
       sessionId: sessionRef,
       event: 'control.create_branch',
       status: 'ok',
@@ -160,7 +160,7 @@ export function controlPlaneRouter(): Router {
     }
     const { operation } = await cp.deleteBranch({ projectId, branchId })
     ctx.audit.write({
-      userId: Number(res.locals.userId),
+      userId: actorId(res),
       sessionId: sessionRef,
       event: 'control.delete_branch',
       status: 'ok',
@@ -187,7 +187,7 @@ export function controlPlaneRouter(): Router {
     if (!parsed.success) throw new AppError({ code: 'BAD_REQUEST', message: 'Invalid database payload' })
     const { database, operation } = await cp.createDatabase(parsed.data)
     ctx.audit.write({
-      userId: Number(res.locals.userId),
+      userId: actorId(res),
       sessionId: sessionRef,
       event: 'control.create_database',
       status: 'ok',
@@ -220,7 +220,7 @@ export function controlPlaneRouter(): Router {
     }
     const { operation } = await cp.deleteDatabase({ projectId, branchId, databaseName })
     ctx.audit.write({
-      userId: Number(res.locals.userId),
+      userId: actorId(res),
       sessionId: sessionRef,
       event: 'control.delete_database',
       status: 'ok',

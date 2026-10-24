@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
 import { api, ApiError } from '../lib/api'
@@ -139,9 +139,19 @@ export function SettingsPage() {
           </p>
         )}
         <div className="mt-4 flex flex-wrap gap-2">
-          <Button variant="secondary" size="sm" onClick={() => setPwOpen(true)}>
-            <KeyRound className="h-3.5 w-3.5" /> Change password
-          </Button>
+          {auth.me?.user && (
+            <Button variant="secondary" size="sm" onClick={() => setPwOpen(true)}>
+              <KeyRound className="h-3.5 w-3.5" /> Change password
+            </Button>
+          )}
+          {!auth.me?.user && (
+            <Link
+              to="/connect"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+              <KeyRound className="h-3.5 w-3.5" /> Sign in for account settings
+            </Link>
+          )}
         </div>
       </Card>
 

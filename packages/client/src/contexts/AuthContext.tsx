@@ -4,6 +4,10 @@ import { ConnectionStatus } from '../lib/types'
 
 export interface MeResponse {
   authenticated: boolean
+  /** Server policy: whether a dashboard account is mandatory for connections. */
+  authRequired?: boolean
+  /** True when this visitor holds an anonymous connection session. */
+  anonymous?: boolean
   user?: { id: number; username: string; mustChangePassword: boolean }
 }
 

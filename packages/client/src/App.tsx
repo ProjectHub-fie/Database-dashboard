@@ -28,18 +28,27 @@ function Shell({ children }: { children: React.ReactNode }) {
       </div>
     )
   }
-  if (!auth.me.authenticated) {
+  // Account sign-in is only mandatory while the server enforces it. When auth
+  // is temporarily disabled, an anonymous visitor with a live connection may
+  // use the dashboard; account-only screens (settings/security/audit) still
+  // handle it themselves by showing sign-in prompts.
+  const shellRequiresAuth = (auth.me.authRequired ?? true) && !auth.me.authenticated
+  if (shellRequiresAuth) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />
   }
   // Account-level screens must stay reachable without a database connection,
   // otherwise an operator can never rotate their bootstrap password.
   const ACCOUNT_PATHS = ['/connect', '/settings', '/security']
+  const signedIn = auth.me.authenticated
   // Require a connection before any database management screen.
-  if (
+  // Anonymous visitors still need a live connection to enter the chrome; the
+  // connect screen is the entry point either way. Signed-in users get the
+  // account exemption as before.
+  const needsConnection =
     auth.connection !== null &&
     !auth.connection.connected &&
-    !ACCOUNT_PATHS.includes(location.pathname)
-  ) {
+    (signedIn ? !ACCOUNT_PATHS.includes(location.pathname) : true)
+  if (needsConnection) {
     return <Navigate to="/connect" replace />
   }
 

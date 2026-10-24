@@ -12,9 +12,10 @@ import { AuditService } from './security/audit.js'
 import { ProviderSessionManager } from './security/provider-sessions.js'
 import { ProviderRegistryImpl } from './providers/registry.js'
 import { NeonProvider } from './providers/neon/provider.js'
-import { installContext, sessionMiddleware, requireAuth, csrfProtection, errorHandler } from './api/middleware.js'
+import { installContext, sessionMiddleware, requireAuth, csrfProtection, errorHandler, anonymousSession } from './api/middleware.js'
 import { authRouter } from './api/auth-router.js'
 import { connectionsRouter } from './api/connections-router.js'
+import { AnonymousSessionStore } from './security/anon-session.js'
 import { providersRouter } from './api/providers-router.js'
 import { dataRouter } from './api/data-router.js'
 import { sqlRouter } from './api/sql-router.js'
@@ -39,7 +40,8 @@ export async function createApp(): Promise<{
   const auth = new AuthService(store)
   const audit = new AuditService(store)
   const sessions = new ProviderSessionManager((id) => registry.get(id))
-  const ctx = { store, auth, providerSessions: sessions, audit, registry }
+  const anonSessions = new AnonymousSessionStore()
+  const ctx = { store, auth, providerSessions: sessions, audit, registry, anonSessions }
 
   // Bootstrap the initial admin from environment before any listener opens.
   // There is deliberately no default password — this is a no-op when the
@@ -113,6 +115,9 @@ export async function createApp(): Promise<{
   // rate-limited. Every other API route requires an authenticated dashboard
   // session + CSRF token for state-changing requests.
   app.use('/api', sessionMiddleware())
+  // When auth is disabled, every browser still gets an isolated session ref so
+  // provider credentials stay per-visitor instead of becoming process-global.
+  app.use('/api', anonymousSession(anonSessions))
   app.use('/api/auth', authRouter())
   // Public catalog: describes which providers exist and which auth methods they
   // implement. Contains no secrets, and the login screen needs it before sign-in
@@ -123,6 +128,9 @@ export async function createApp(): Promise<{
     (req, res, next) => {
       // Login is deliberately public (it creates the session).
       if (req.path === '/auth/login') return next()
+      // Authentication is temporarily optional: the check is intact, the flag
+      // only decides whether it runs. Set AUTH_REQUIRED=true to enforce it.
+      if (!config.authRequired) return next()
       return requireAuth(req, res, next)
     },
     csrfProtection({ exempt: (req) => ['GET', 'HEAD', 'OPTIONS'].includes(req.method) }),

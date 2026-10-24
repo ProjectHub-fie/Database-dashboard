@@ -60,11 +60,14 @@ export function LoginPage() {
   const location = useLocation()
 
   const signedIn = auth.me?.authenticated === true
+  // When the server runs with auth disabled, the URL/API modes are usable
+  // without a dashboard account. The account tab and its logic remain intact.
+  const authRequired = auth.me?.authRequired === false ? false : true
 
   // `null` follows the auth state; once the user picks a tab their choice wins.
   // Avoids a flash of the wrong tab while /auth/me is loading.
   const [picked, setPicked] = useState<Mode | null>(null)
-  const mode: Mode = picked ?? (signedIn ? 'url' : 'account')
+  const mode: Mode = picked ?? (signedIn ? 'url' : authRequired ? 'account' : 'url')
 
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -139,6 +142,7 @@ export function LoginPage() {
       'Sign in to your dashboard account to open this connection. What you typed stays in this page and is never written to browser storage.',
     )
     setPicked('account')
+    void 0
   }
 
   async function submitAccount(e: FormEvent) {
@@ -185,7 +189,7 @@ export function LoginPage() {
 
   async function connectUrl(e: FormEvent) {
     e.preventDefault()
-    if (!signedIn) return requireSignIn()
+    if (!signedIn && authRequired) return requireSignIn()
     setError(null)
     setNotice(null)
     setBusy(true)
@@ -209,7 +213,7 @@ export function LoginPage() {
 
   async function connectApi(e: FormEvent) {
     e.preventDefault()
-    if (!signedIn) return requireSignIn()
+    if (!signedIn && authRequired) return requireSignIn()
     setError(null)
     setNotice(null)
     setOrgs(null)
@@ -270,12 +274,14 @@ export function LoginPage() {
       <main className="mx-auto max-w-6xl px-6 pb-24 pt-12 sm:pt-16">
         <div className="mx-auto max-w-3xl text-center">
           <h1 className="text-balance text-[32px] font-extrabold leading-[1.06] tracking-[-0.035em] text-slate-900 sm:text-[44px] dark:text-white">
-            {signedIn ? 'Connect a database' : 'Sign in to DB Horizon'}
+            {signedIn ? 'Connect a database' : authRequired ? 'Sign in to DB Horizon' : 'Connect a database'}
           </h1>
           <p className="mx-auto mt-4 max-w-[34rem] text-pretty text-[15px] leading-relaxed text-slate-600 dark:text-slate-400">
             {signedIn
               ? 'Choose how this session reaches your database. Each connection is isolated to your session and closed on disconnect.'
-              : 'Use a dashboard account for ongoing work, or connect with a database URL / provider API key.'}
+              : authRequired
+                ? 'Use a dashboard account for ongoing work, or connect with a database URL / provider API key.'
+                : 'Choose how this session reaches your database. No dashboard account is needed right now.'}
           </p>
         </div>
 
@@ -285,8 +291,8 @@ export function LoginPage() {
             aria-label="Connection mode"
             className="grid grid-cols-1 gap-1 rounded-xl bg-slate-100 p-1 sm:grid-cols-3 dark:bg-slate-800/60"
           >
-            <TabButton active={mode === 'url'} onClick={() => switchMode('url')} icon={<Database className="h-3.5 w-3.5" />} label="Database URL" locked={!signedIn} />
-            <TabButton active={mode === 'api'} onClick={() => switchMode('api')} icon={<KeyRound className="h-3.5 w-3.5" />} label="Provider API key" locked={!signedIn} />
+            <TabButton active={mode === 'url'} onClick={() => switchMode('url')} icon={<Database className="h-3.5 w-3.5" />} label="Database URL" locked={authRequired && !signedIn} />
+            <TabButton active={mode === 'api'} onClick={() => switchMode('api')} icon={<KeyRound className="h-3.5 w-3.5" />} label="Provider API key" locked={authRequired && !signedIn} />
             <TabButton active={mode === 'account'} onClick={() => switchMode('account')} icon={<UserRound className="h-3.5 w-3.5" />} label="Dashboard account" locked={false} />
           </div>
 
@@ -329,6 +335,7 @@ export function LoginPage() {
             {mode === 'url' && (
               <UrlPanel
                 signedIn={signedIn}
+                worksSignedOut={!authRequired}
                 providers={providerOptions}
                 catalogIssue={catalogIssue}
                 onRetryProviders={loadProviders}
@@ -347,7 +354,7 @@ export function LoginPage() {
                 testing={testing}
                 busy={busy}
                 supported={urlSupported}
-                onTest={() => (signedIn ? void testUrl() : requireSignIn())}
+                onTest={authRequired && !signedIn ? requireSignIn : () => void testUrl()}
                 onSubmit={connectUrl}
                 onSignIn={requireSignIn}
               />
@@ -356,6 +363,7 @@ export function LoginPage() {
             {mode === 'api' && (
               <ApiPanel
                 signedIn={signedIn}
+                worksSignedOut={!authRequired}
                 providers={providerOptions}
                 catalogIssue={catalogIssue}
                 onRetryProviders={loadProviders}
@@ -574,6 +582,8 @@ function AccountPanel(props: {
 
 function UrlPanel(props: {
   signedIn: boolean
+  /** True when the server allows this mode without a dashboard account. */
+  worksSignedOut: boolean
   providers: ProviderCatalogEntry[] | null
   catalogIssue: string | null
   onRetryProviders: () => void
@@ -671,9 +681,9 @@ function UrlPanel(props: {
       </div>
 
       <Button type="submit" loading={props.busy} disabled={!props.supported} className="mt-5 w-full">
-        {props.signedIn ? 'Connect' : 'Sign in to connect'} <ArrowRight className="h-4 w-4" />
+        {props.signedIn || props.worksSignedOut ? 'Connect' : 'Sign in to connect'} <ArrowRight className="h-4 w-4" />
       </Button>
-      {!props.signedIn && (
+      {!props.signedIn && !props.worksSignedOut && (
         <p className="mt-3 text-center text-[11px] text-slate-400 dark:text-slate-500">
           A dashboard session is required before a connection can be opened.{' '}
           <button type="button" onClick={props.onSignIn} className="font-medium underline underline-offset-2">
@@ -687,6 +697,8 @@ function UrlPanel(props: {
 
 function ApiPanel(props: {
   signedIn: boolean
+  /** True when the server allows this mode without a dashboard account. */
+  worksSignedOut: boolean
   providers: ProviderCatalogEntry[] | null
   catalogIssue: string | null
   onRetryProviders: () => void
@@ -791,9 +803,9 @@ function ApiPanel(props: {
       </div>
 
       <Button type="submit" loading={props.busy} disabled={!props.supported} className="mt-5 w-full">
-        {props.signedIn ? 'Verify and connect' : 'Sign in to connect'} <ArrowRight className="h-4 w-4" />
+        {props.signedIn || props.worksSignedOut ? 'Verify and connect' : 'Sign in to connect'} <ArrowRight className="h-4 w-4" />
       </Button>
-      {!props.signedIn && (
+      {!props.signedIn && !props.worksSignedOut && (
         <p className="mt-3 text-center text-[11px] text-slate-400 dark:text-slate-500">
           A dashboard session is required before a provider key can be used.{' '}
           <button type="button" onClick={props.onSignIn} className="font-medium underline underline-offset-2">

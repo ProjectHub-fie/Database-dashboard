@@ -4,6 +4,7 @@ import { ProviderSessionManager } from '../security/provider-sessions.js'
 import { AuditService } from '../security/audit.js'
 import { ProviderRegistryImpl } from '../providers/registry.js'
 import { Store } from '../storage/store.js'
+import { AnonymousSessionStore } from '../security/anon-session.js'
 
 export interface AppContext {
   store: Store
@@ -11,6 +12,8 @@ export interface AppContext {
   providerSessions: ProviderSessionManager
   audit: AuditService
   registry: ProviderRegistryImpl
+  /** Anonymous connection sessions; used only while auth is disabled. */
+  anonSessions: AnonymousSessionStore
 }
 
 /** Attach the shared context to every request. */

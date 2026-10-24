@@ -15,7 +15,8 @@ export interface ConnectionMetadataView {
 
 export interface ProviderSession {
   readonly sessionId: string
-  readonly userId: number
+  /** Owning dashboard user, or null for an anonymous connection session. */
+  readonly userId: number | null
   providerId: string
   auth: 'connection' | 'api'
   /** In-memory credential hints for redaction. Never persisted. */
@@ -51,7 +52,7 @@ export class ProviderSessionManager {
 
   create(input: {
     sessionId: string
-    userId: number
+    userId: number | null
     providerId: string
     auth: 'connection' | 'api'
     connection: ConnectionRef<unknown> | null
@@ -88,7 +89,7 @@ export class ProviderSessionManager {
   }
 
   /** Verify that a provider session belongs to the given dashboard user. */
-  require(sessionId: string, userId: number): ProviderSession {
+  require(sessionId: string, userId: number | null): ProviderSession {
     const s = this.sessions.get(sessionId)
     if (!s) {
       throw new AppError({ code: 'UNAUTHORIZED', message: 'No active database session. Connect first.' })
@@ -125,7 +126,7 @@ export class ProviderSessionManager {
   }
 
   /** Obtain (or lazily create) the persistent query session for a provider session. */
-  async allocatePrimary(reference: string, userId: number): Promise<QueryAllocation> {
+  async allocatePrimary(reference: string, userId: number | null): Promise<QueryAllocation> {
     const s = this.require(reference, userId)
     if (!s.primaryQuerySession) {
       const provider = this.getProvider(s.providerId)
