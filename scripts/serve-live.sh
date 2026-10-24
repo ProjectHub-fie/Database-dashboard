@@ -18,6 +18,15 @@ LOG="$RUNTIME/api-$PORT.log"
 
 mkdir -p "$RUNTIME/data-$PORT" "$RUNTIME"
 
+# Session and CSRF tokens are HMACs under this secret, so every instance behind
+# the proxy must share one value. Generated once and reused; rotating it simply
+# invalidates outstanding anonymous cookies, which clients re-mint on next load.
+SECRET_FILE="$RUNTIME/cookie-secret"
+if [ ! -s "$SECRET_FILE" ]; then
+  node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64url'))" > "$SECRET_FILE"
+  chmod 600 "$SECRET_FILE"
+fi
+
 cd "$ROOT/packages/server" || exit 1
 
 while true; do
@@ -28,6 +37,7 @@ while true; do
   AUTH_REQUIRED=false \
   SERVE_CLIENT=true \
   DATA_DIR="$RUNTIME/data-$PORT" \
+  COOKIE_SECRET="$(cat "$SECRET_FILE")" \
   node dist/index.js >> "$LOG" 2>&1
   code=$?
   echo "=== $(date -Is) API on :$PORT exited ($code), restarting in 2s ===" >> "$LOG"

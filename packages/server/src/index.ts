@@ -195,6 +195,16 @@ function runBackgroundJobs(sessions: ProviderSessionManager): void {
 }
 
 if (process.env.NODE_ENV !== 'test') {
+  // The CSRF and session tokens are HMACs under COOKIE_SECRET (see
+  // security/anon-session.ts). A default secret is predictable, which would let
+  // anyone forge a session, and a per-instance secret would make a cookie minted
+  // by one host fail on another. Refuse to run in production without it.
+  if (config.nodeEnv === 'production' && config.cookieSecret === 'dev-insecure-secret-change-me') {
+    // eslint-disable-next-line no-console
+    console.error('COOKIE_SECRET must be set to a long random value in production')
+    process.exit(1)
+  }
+
   void createApp()
     .then(({ app, store }) => {
       app.listen(config.port, config.host, () => {

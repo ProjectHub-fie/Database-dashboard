@@ -476,7 +476,16 @@ export interface ControlPlaneAdapter {
   readonly providerId: string
   readonly apiBaseUrl: string
 
-  validateApiKey(): Promise<{ organizations?: Organization[]; accountId?: string }>
+  /**
+   * `organizationScoped` is set when the key cannot read `/users/me` — Neon
+   * refuses that for organization API keys — so callers know the identity is
+   * absent by design rather than missing.
+   */
+  validateApiKey(): Promise<{
+    organizations?: Organization[]
+    accountId?: string
+    organizationScoped?: boolean
+  }>
 
   listOrganizations(): Promise<Organization[]>
   listProjects(orgId?: string): Promise<Project[]>
