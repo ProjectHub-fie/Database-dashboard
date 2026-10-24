@@ -136,3 +136,15 @@ implemented provider. Build commands:
   shape, host allowlist and DNS pinning only, then returns metadata; a wrong
   password is not caught until `POST /api/connections/url`. The UI labels it
   "Test connection", so copy must not imply the credential was verified.
+
+- **API-key sessions attach a database to get a SQL surface.** Connecting with
+  only a Neon API key creates an `accountOnly` session (control plane only).
+  The operator attaches a database via `POST /api/connections/database`, which
+  asks the control plane for a credential-bearing `connection_uri`, runs it
+  through `verifyNeonConnectionUrl` (allowlist, private-range rejection, DNS
+  pinning) and opens the same pinned-TLS `pg` client URL mode uses. The URI
+  never leaves the server; its password goes into the session's `secretHints`.
+  `auth` stays `'api'`, so control-plane routes keep working once a database is
+  attached. To add another provider, implement the optional
+  `ControlPlaneAdapter.getConnectionUri()` (see docs/PROVIDERS.md). The Neon
+  client method is `getConnectionUri` → `GET /projects/{id}/connection_uri`.
