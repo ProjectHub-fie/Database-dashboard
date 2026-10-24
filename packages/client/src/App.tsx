@@ -16,6 +16,7 @@ import { MonitoringPage } from './pages/MonitoringPage'
 import { ImportExportPage } from './pages/ImportExportPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { SecurityPage } from './pages/SecurityPage'
+import { PrivacyPage, TermsPage } from './pages/LegalPages'
 
 function Shell({ children }: { children: React.ReactNode }) {
   const auth = useAuth()
@@ -122,6 +123,8 @@ export default function App() {
           </EntryRoute>
         }
       />
+      <Route path="/privacy" element={<PrivacyPage />} />
+      <Route path="/terms" element={<TermsPage />} />
       <Route
         path="/*"
         element={
