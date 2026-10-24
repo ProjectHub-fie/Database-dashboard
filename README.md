@@ -125,6 +125,13 @@ function returns `503 API_NOT_CONFIGURED` instead of falling through to HTML.
    Preview), and redeploy. A JSON `503 API_NOT_CONFIGURED` means the function
    ran but the variable is missing.
 
+   The sign-in screen keeps working when the proxy is misconfigured: the
+   provider selector falls back to Neon (the one provider the server registers)
+   and shows `This deployment has no API origin configured`. Without that
+   fallback the dropdown renders empty and Connect stays disabled, which looks
+   like "no providers" rather than a deployment problem. Sign-in itself still
+   fails until `API_ORIGIN` is set, because that needs the real backend.
+
 ## First sign-in
 
 There is **no default password**. On first start, the server creates the initial
@@ -175,8 +182,10 @@ The suite currently includes:
 | `api/connection-modes.test.ts` | provider catalog, URL + API-key modes, secret-free responses, session isolation (18 tests) |
 | `adapters/postgres-catalog.test.ts` | `name[]` decoding regression (1 test) |
 | `adapters/engine-dialect.test.ts` | dialect boundary (2 tests) |
+| `lib/provider-catalog.test.ts` (client) | provider selector fallback when the catalog request fails (11 tests) |
 
-**84/84 pass**, plus `tsc` clean on both packages and both production builds.
+**95/95 pass**, plus `tsc` clean on both packages and both production builds.
+`npm test` at the repo root runs both packages.
 
 Runtime database and Neon API calls are mocked only in tests; the real
 application uses genuine PostgreSQL connections and Neon API v2 responses.
