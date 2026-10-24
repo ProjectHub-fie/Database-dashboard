@@ -55,9 +55,44 @@ async function readBody(req: IncomingMessage): Promise<Buffer | undefined> {
   return chunks.length ? Buffer.concat(chunks) : Buffer.alloc(0)
 }
 
+/**
+ * Connection-level failures. These are raised before the request reaches the
+ * upstream application, so replaying a write against a second origin cannot
+ * double-apply it. Anything else (socket reset mid-response, timeout) is
+ * ambiguous and must never be retried for a non-idempotent method.
+ */
+const CONNECT_FAILURE_CODES = new Set([
+  'ECONNREFUSED',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'UND_ERR_CONNECT_TIMEOUT',
+])
+
+function isConnectFailure(err: unknown): boolean {
+  const code = (err as { cause?: { code?: string } })?.cause?.code
+  return typeof code === 'string' && CONNECT_FAILURE_CODES.has(code)
+}
+
+const IDEMPOTENT = new Set(['GET', 'HEAD', 'OPTIONS'])
+
+function parseOrigin(raw: string | undefined): string | undefined {
+  if (!raw) return undefined
+  const trimmed = raw.replace(/\/+$/, '')
+  try {
+    const u = new URL(trimmed)
+    return u.protocol === 'https:' || u.protocol === 'http:' ? trimmed : undefined
+  } catch {
+    return undefined
+  }
+}
+
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const origin = process.env.API_ORIGIN?.replace(/\/+$/, '')
-  if (!origin) {
+  const origins = [parseOrigin(process.env.API_ORIGIN), parseOrigin(process.env.API_ORIGIN_FALLBACK)].filter(
+    (o): o is string => Boolean(o),
+  )
+  if (!origins.length) {
     sendJson(
       res,
       503,
@@ -67,22 +102,12 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return
   }
 
-  let target: URL
-  try {
-    target = new URL(origin)
-  } catch {
-    sendJson(res, 503, 'API_NOT_CONFIGURED', 'API_ORIGIN is not a valid absolute URL.')
-    return
-  }
-  if (target.protocol !== 'https:' && target.protocol !== 'http:') {
-    sendJson(res, 503, 'API_NOT_CONFIGURED', 'API_ORIGIN must be an http(s) URL.')
-    return
-  }
-  // A self-referential API_ORIGIN makes this function call itself; Vercel
-  // reports that as a bare 508 loop rather than a fixable error. Detect it
-  // here so a misconfiguration produces one actionable response.
+  // A self-referential origin makes this function call itself; Vercel reports
+  // that as a bare 508 loop rather than a fixable error. Detect it here so a
+  // misconfiguration produces one actionable response.
   const ownHost = String(req.headers['x-forwarded-host'] ?? req.headers.host ?? '').split(':')[0]
-  if (target.hostname === ownHost) {
+  const usable = origins.filter((o) => new URL(o).hostname !== ownHost)
+  if (!usable.length) {
     sendJson(
       res,
       503,
@@ -93,7 +118,6 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   }
 
   const incoming = req.url ?? '/'
-  const upstream = new URL(incoming.startsWith('/') ? incoming : `/${incoming}`, origin)
 
   const headers = new Headers()
   for (const [key, value] of Object.entries(req.headers)) {
@@ -114,16 +138,39 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return
   }
 
-  let upstreamRes: Response
-  try {
-    upstreamRes = await fetch(upstream, {
-      method: req.method,
-      headers,
-      body: body && body.byteLength ? new Uint8Array(body) : undefined,
-      redirect: 'manual',
-    })
-  } catch {
-    sendJson(res, 502, 'UPSTREAM_UNAVAILABLE', 'The database service is unreachable. Try again shortly.')
+  const method = req.method ?? 'GET'
+  const mayFailover = IDEMPOTENT.has(method)
+  let upstreamRes: Response | undefined
+  let lastCode = 'UPSTREAM_UNAVAILABLE'
+
+  for (const origin of usable) {
+    const upstream = new URL(incoming.startsWith('/') ? incoming : `/${incoming}`, origin)
+    try {
+      upstreamRes = await fetch(upstream, {
+        method,
+        headers,
+        body: body && body.byteLength ? new Uint8Array(body) : undefined,
+        redirect: 'manual',
+      })
+      break
+    } catch (err) {
+      // A write whose connection broke after the request was sent may already
+      // have been applied upstream. Replaying it elsewhere risks a duplicate
+      // create/delete, so report the failure and let the caller verify state.
+      if (!mayFailover && !isConnectFailure(err)) {
+        lastCode = 'AMBIGUOUS_UPSTREAM'
+        break
+      }
+      lastCode = isConnectFailure(err) ? 'UPSTREAM_UNAVAILABLE' : 'AMBIGUOUS_UPSTREAM'
+    }
+  }
+
+  if (!upstreamRes) {
+    const message =
+      lastCode === 'AMBIGUOUS_UPSTREAM'
+        ? 'The database service did not confirm this request. Check the current state before retrying.'
+        : 'The database service is unreachable. Try again shortly.'
+    sendJson(res, 502, lastCode, message)
     return
   }
 
