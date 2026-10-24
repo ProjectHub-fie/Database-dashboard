@@ -3,7 +3,6 @@ import { useAuth } from './contexts/AuthContext'
 import { AppShell } from './components/AppShell'
 import { ErrorBoundary, Spinner } from './components/ui'
 import { LoginPage } from './pages/LoginPage'
-import { ConnectPage } from './pages/ConnectPage'
 import { OverviewPage } from './pages/OverviewPage'
 import { DataBrowserPage } from './pages/DataBrowserPage'
 import { SqlStudioPage } from './pages/SqlStudioPage'
@@ -43,9 +42,6 @@ function Shell({ children }: { children: React.ReactNode }) {
   ) {
     return <Navigate to="/connect" replace />
   }
-  if (auth.connection?.connected && location.pathname === '/connect') {
-    return <Navigate to="/overview" replace />
-  }
 
   return (
     <ErrorBoundary>
@@ -55,30 +51,14 @@ function Shell({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * Authenticated route rendered without the dashboard chrome. Used by the
- * connection screen, which is a standalone landing page.
+ * Entry route: the single screen that hosts all three sign-in/connection modes.
+ *
+ * It deliberately renders for signed-out *and* signed-in-but-not-connected
+ * visitors — the connection tabs only work with a dashboard session, so
+ * bouncing authenticated users elsewhere would split one flow across two URLs.
+ * Rendered without the dashboard chrome.
  */
-function BareRoute({ children }: { children: React.ReactNode }) {
-  const auth = useAuth()
-  const location = useLocation()
-
-  if (auth.me === null) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <Spinner className="h-8 w-8" />
-      </div>
-    )
-  }
-  if (!auth.me.authenticated) {
-    return <Navigate to="/login" state={{ from: location.pathname }} replace />
-  }
-  if (auth.connection?.connected) {
-    return <Navigate to="/overview" replace />
-  }
-  return <>{children}</>
-}
-
-function PublicRoute({ children }: { children: React.ReactNode }) {
+function EntryRoute({ children }: { children: React.ReactNode }) {
   const auth = useAuth()
   if (auth.me === null) {
     return (
@@ -90,29 +70,28 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   if (auth.me.authenticated && auth.connection?.connected) {
     return <Navigate to="/overview" replace />
   }
-  if (auth.me.authenticated) {
-    return <Navigate to="/connect" replace />
-  }
   return <>{children}</>
 }
 
 export default function App() {
   return (
     <Routes>
+      {/* Both URLs render the same three-mode entry screen; /connect is kept so
+          existing links and bookmarks keep working. */}
       <Route
         path="/login"
         element={
-          <PublicRoute>
+          <EntryRoute>
             <LoginPage />
-          </PublicRoute>
+          </EntryRoute>
         }
       />
       <Route
         path="/connect"
         element={
-          <BareRoute>
-            <ConnectPage />
-          </BareRoute>
+          <EntryRoute>
+            <LoginPage />
+          </EntryRoute>
         }
       />
       <Route

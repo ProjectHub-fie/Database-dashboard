@@ -14,6 +14,7 @@ import { NeonHttpClient, NeonApiError } from '../providers/neon/client.js'
 import { installContext, sessionMiddleware, requireAuth, csrfProtection, errorHandler } from '../api/middleware.js'
 import { authRouter } from '../api/auth-router.js'
 import { connectionsRouter } from '../api/connections-router.js'
+import { providersRouter } from '../api/providers-router.js'
 import { dataRouter } from '../api/data-router.js'
 import { sqlRouter } from '../api/sql-router.js'
 import { schemaRouter } from '../api/schema-router.js'
@@ -101,6 +102,7 @@ export async function makeTestApp(opts: { neonHttp?: MockNeonHttpClient } = {}):
   app.use(express.json({ limit: '1mb' }))
   app.use('/api', sessionMiddleware())
   app.use('/api/auth', authRouter())
+  app.use('/api/providers', providersRouter())
   app.use('/api', (req, res, next) => {
     if (req.path === '/auth/login') return next()
     return requireAuth(req, res, next)

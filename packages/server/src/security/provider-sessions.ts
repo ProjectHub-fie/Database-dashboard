@@ -3,6 +3,16 @@ import { AppError } from '../lib/errors.js'
 import { redact } from '../lib/redact.js'
 import { createLogger } from '../lib/logger.js'
 
+/** Safe, non-secret metadata shown in the UI. */
+export interface ConnectionMetadataView {
+  host: string
+  database: string
+  role: string
+  readOnly: boolean
+  /** Optional operator label; never a credential. */
+  displayName?: string
+}
+
 export interface ProviderSession {
   readonly sessionId: string
   readonly userId: number
@@ -13,7 +23,7 @@ export interface ProviderSession {
   connection: ConnectionRef<unknown> | null
   controlPlane: ControlPlaneAdapter | null
   accountOnly: boolean
-  metadata: { host: string; database: string; role: string; readOnly: boolean } | null
+  metadata: ConnectionMetadataView | null
   usage: { usageUntil?: number }
   createdAt: number
   lastActive: number

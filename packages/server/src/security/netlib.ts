@@ -104,7 +104,11 @@ export async function verifyNeonHost(
   }
 
   // Literal IPv4/IPv6 literals are rejected: Neon URLs always use DNS names.
-  if (net.isIP(host) !== 0) {
+  // `URL.hostname` keeps IPv6 brackets (`[::1]`), so strip them before the
+  // check or a bracketed literal would fall through to the character check and
+  // be reported as a malformed hostname instead of a disallowed address.
+  const literal = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host
+  if (net.isIP(literal) !== 0) {
     throw new AppError({
       code: 'CONNECTION_UNSUPPORTED_HOST',
       message: 'IP address literals are not permitted; use a database hostname',
@@ -120,7 +124,10 @@ export async function verifyNeonHost(
   if (!isNeon) {
     throw new AppError({
       code: 'CONNECTION_UNSUPPORTED_HOST',
-      message: `Only Neon database hosts are allowed (expected *${NEON_HOST_SUFFIXES[0]} or *${NEON_HOST_SUFFIXES[1]}). Host '${maskHost(host)}' is not an approved Neon endpoint.`,
+      // The host is echoed because the user just typed it and already passed
+      // the charset check above; masking it to `***` only made the rejection
+      // impossible to diagnose. The password is never part of this message.
+      message: `Only Neon database hosts are allowed (expected *${NEON_HOST_SUFFIXES[0]} or *${NEON_HOST_SUFFIXES[1]}). Host '${host}' is not an approved Neon endpoint.`,
     })
   }
 
@@ -129,7 +136,7 @@ export async function verifyNeonHost(
   if (addresses.length === 0) {
     throw new AppError({
       code: 'CONNECTION_FAILED',
-      message: `Could not resolve database host '${maskHost(host)}'`,
+      message: `Could not resolve database host '${host}'`,
       detail: `DNS resolution returned no addresses for ${host}`,
     })
   }
@@ -257,9 +264,4 @@ export class PinnedSocketFactory {
 
 export function generatePinToken(): string {
   return crypto.randomBytes(24).toString('hex')
-}
-
-function maskHost(host: string): string {
-  if (host.length <= 24) return '***'
-  return `${host.slice(0, 6)}...${host.slice(-12)}`
 }

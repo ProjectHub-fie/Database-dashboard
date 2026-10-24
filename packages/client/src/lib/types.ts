@@ -15,6 +15,24 @@ export interface ConnectionMetadata {
   role: string
   region?: string
   readOnly: boolean
+  /** Optional operator label. Never a credential. */
+  displayName?: string
+}
+
+/**
+ * One entry from GET /api/providers. `available: false` entries are roadmap
+ * items: they must never be selectable as a working connection mode.
+ */
+export interface ProviderCatalogEntry {
+  id: string
+  name: string
+  kind: 'postgres' | 'mysql' | 'mariadb'
+  available: boolean
+  authMethods: string[]
+  controlPlane: boolean
+  apiDocs?: string
+  capabilities: string[]
+  blockedBy?: string
 }
 
 export interface ConnectionStatus {
