@@ -134,3 +134,63 @@ describe('Recent reauthentication for destructive actions', () => {
     expect(okDelete.body.operation).toBeDefined()
   })
 })
+
+describe('Dashboard password rotation', () => {
+  it('changes the password, clears mustChangePassword, and revokes other sessions', async () => {
+    const t = await makeTestApp()
+    const seed = await seedUser(t.store, 'rotate-user', 'initial-password-123!')
+    const first = await login(t.app, seed.username, seed.password)
+    const second = await login(t.app, seed.username, seed.password)
+
+    // A brand-new account is flagged until the operator rotates the password.
+    const me = await first.agent.get('/api/auth/me')
+    expect(me.body.user.mustChangePassword).toBe(true)
+
+    const res = await first.agent.post(
+      '/api/auth/change-password',
+      { currentPassword: seed.password, newPassword: 'brand-new-password-456!' },
+      first.csrfToken,
+    )
+    expect(res.status).toBe(200)
+
+    // The active session survives; the other session is revoked.
+    const stillMe = await first.agent.get('/api/auth/me')
+    expect(stillMe.body.authenticated).toBe(true)
+    expect(stillMe.body.user.mustChangePassword).toBe(false)
+    const other = await second.agent.get('/api/auth/me')
+    expect(other.body.authenticated).toBe(false)
+
+    // Old credentials no longer work; the new ones do.
+    const oldLogin = await new TestAgent(t.app).post('/api/auth/login', {
+      username: seed.username,
+      password: seed.password,
+    })
+    expect(oldLogin.status).toBe(401)
+    const newLogin = await new TestAgent(t.app).post('/api/auth/login', {
+      username: seed.username,
+      password: 'brand-new-password-456!',
+    })
+    expect(newLogin.status).toBe(200)
+  })
+
+  it('rejects a wrong current password and short new passwords', async () => {
+    const t = await makeTestApp()
+    const seed = await seedUser(t.store, 'rotate-user-2', 'initial-password-123!')
+    const { agent, csrfToken } = await login(t.app, seed.username, seed.password)
+
+    const wrong = await agent.post(
+      '/api/auth/change-password',
+      { currentPassword: 'not-the-password', newPassword: 'another-password-789!' },
+      csrfToken,
+    )
+    expect(wrong.status).toBe(401)
+
+    const short = await agent.post(
+      '/api/auth/change-password',
+      { currentPassword: seed.password, newPassword: 'too-short' },
+      csrfToken,
+    )
+    expect(short.status).toBe(400)
+    expect(short.body.error.code).toBe('BAD_REQUEST')
+  })
+})

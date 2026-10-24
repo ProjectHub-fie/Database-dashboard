@@ -96,6 +96,44 @@ because it shares the PostgreSQL engine adapter. It is **not implemented** in
 this release and is not listed as functional anywhere in the UI; only Neon is
 enabled.
 
+## Adding a non-PostgreSQL engine (MySQL / MariaDB)
+
+The shared layer must stay dialect-free. Concretely, the API routers
+(`src/api/*`) never build SQL text: they take a `DatabaseAdapter` and pass
+`{ sql, params }` through. All placeholder and quoting syntax lives in the
+engine adapter, declared through `EngineDialect` in `providers/types.ts`
+(`placeholder`, `quoteIdentifier`, `defaultPort`, `schemaModel`).
+
+That boundary is enforced by `adapters/engine-dialect.test.ts`, which fails if
+`$n` placeholder construction appears anywhere outside an adapter.
+
+A MySQL adapter (`mysql2`) must therefore:
+
+| Concern | PostgreSQL (current) | MySQL / MariaDB |
+| --- | --- | --- |
+| Placeholder | `$1`, `$2`, … | `?` (positional, in order) |
+| Identifier quoting | `"name"` | `` `name` `` |
+| Default port | 5432 | 3306 |
+| Schema model | `schemaModel: 'namespace'` (schema.table) | `schemaModel: 'database'` (database = schema; query `information_schema`) |
+| Catalog discovery | `pg_catalog` | `information_schema` |
+| Statement timeout | `SET statement_timeout` | `SET SESSION max_execution_time` |
+| Cancel a query | `pg_cancel_backend(pid)` | `KILL QUERY <connection_id>` |
+| TLS | `ssl` with CA + `rejectUnauthorized` | `ssl: { rejectUnauthorized: true, ca }` |
+| Row identity | primary key / ctid-free unique key | primary key (MySQL has no `ctid`) |
+
+Requirements before MySQL can be enabled:
+
+1. The adapter declares `dialect` with `kind: 'mysql'` and `?` placeholders, and
+   never emits `$n`.
+2. SSRF/TLS rules in `security/netlib.ts` are extended with an explicit,
+   admin-controlled host policy — MySQL destinations are not Neon hosts, so the
+   current deny-by-default rule rejects them (that is intentional and must not be
+   weakened into arbitrary-host allowlisting).
+3. Contract tests pass, including a test proving `$n` is never sent to MySQL.
+4. Only then add the provider to the registry and expose it in the UI.
+
+Until all four are done the engine must not appear as selectable.
+
 ## Testing rules
 
 - External Neon services (API responses) are mocked **only in automated tests**.

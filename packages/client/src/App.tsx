@@ -32,8 +32,15 @@ function Shell({ children }: { children: React.ReactNode }) {
   if (!auth.me.authenticated) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />
   }
+  // Account-level screens must stay reachable without a database connection,
+  // otherwise an operator can never rotate their bootstrap password.
+  const ACCOUNT_PATHS = ['/connect', '/settings', '/security']
   // Require a connection before any database management screen.
-  if (auth.connection !== null && !auth.connection.connected && location.pathname !== '/connect') {
+  if (
+    auth.connection !== null &&
+    !auth.connection.connected &&
+    !ACCOUNT_PATHS.includes(location.pathname)
+  ) {
     return <Navigate to="/connect" replace />
   }
   if (auth.connection?.connected && location.pathname === '/connect') {

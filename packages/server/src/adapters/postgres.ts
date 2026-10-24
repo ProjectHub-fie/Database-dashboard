@@ -2,6 +2,7 @@ import pg from 'pg'
 import {
   DatabaseAdapter,
   DatabaseStats,
+  EngineDialect,
   GrantInfo,
   QueryResult,
   RoleInfo,
@@ -13,7 +14,7 @@ import {
   TableIndex,
   TableInfo,
 } from '../providers/types.js'
-import { quoteQualified } from './sql-ident.js'
+import { quoteIdent, quoteQualified } from './sql-ident.js'
 import { redact } from '../lib/redact.js'
 import { AppError } from '../lib/errors.js'
 import { createPinnedSocket } from './pinned-socket.js'
@@ -55,6 +56,13 @@ export interface PostgresAdapterOptions {
  */
 export class PostgresAdapter implements DatabaseAdapter<PgConn> {
   readonly kind = 'postgres'
+  readonly dialect: EngineDialect = {
+    kind: 'postgres',
+    placeholder: (position) => `$${position}`,
+    quoteIdentifier: quoteIdent,
+    defaultPort: 5432,
+    schemaModel: 'namespace',
+  }
   private readonly maxRows: number
   private readonly statementTimeoutMs: number
 

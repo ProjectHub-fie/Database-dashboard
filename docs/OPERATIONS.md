@@ -74,6 +74,28 @@ the request comes over HTTPS).
 - Sign-out (revokes the session server-side).
 - Idle expiry (default 30 min) or TTL (default 8 h).
 
+### Dashboard account password
+
+1. Sign in and open **Settings → Change password** (reachable without a database
+   connection).
+2. Enter the current password and a new one (minimum 12 characters). The change
+   takes effect immediately and revokes every *other* session for that account.
+3. Remove `ADMIN_INITIAL_PASSWORD` from the server environment and restart so the
+   bootstrap value no longer exists anywhere.
+4. If the password may have leaked and you cannot sign in, delete the account row
+   from the dashboard store (`$DATA_DIR/db-horizon.sqlite`) and restart with a
+   fresh `ADMIN_INITIAL_PASSWORD`:
+
+   ```bash
+   node -e "const{DatabaseSync}=require('node:sqlite');
+   const db=new DatabaseSync(process.env.DATA_DIR+'/db-horizon.sqlite');
+   db.exec('PRAGMA foreign_keys = ON');
+   db.prepare('DELETE FROM users WHERE username=?').run('admin');"
+   ```
+
+   Foreign keys cascade, so that account's sessions are deleted with it. The
+   server recreates the admin on next start.
+
 ## Incident response
 
 If you suspect a credential leaked (public gist, commit, chat log, compromised

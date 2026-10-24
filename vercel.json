@@ -5,7 +5,7 @@
   "buildCommand": "npm run build -w client",
   "outputDirectory": "packages/client/dist",
   "functions": {
-    "api/[...path].ts": {
+    "api/*.ts": {
       "memory": 1024,
       "maxDuration": 60
     }

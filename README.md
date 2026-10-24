@@ -104,12 +104,31 @@ memory, none of which survive a serverless lifecycle or span invocations.
 so the proxy cannot be used as an open proxy or SSRF pivot. If it is unset the
 function returns `503 API_NOT_CONFIGURED` instead of falling through to HTML.
 
+4. Verify the proxy actually reached the backend:
+
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}\n' https://<your-vercel-domain>/api/auth/me
+   ```
+
+   `401` means the function proxied correctly (unauthenticated is the expected
+   answer). A Vercel `NOT_FOUND` page means the deployment served `index.html`
+   rewrites only — check that `api/[...path].ts` is present in the deployed
+   tree, that `API_ORIGIN` is set for the Production environment (not just
+   Preview), and redeploy. A JSON `503 API_NOT_CONFIGURED` means the function
+   ran but the variable is missing.
+
 ## First sign-in
 
 There is **no default password**. On first start, the server creates the initial
 admin only when `ADMIN_USERNAME` (default `admin`) and `ADMIN_INITIAL_PASSWORD`
 (required, ≥ 12 chars) are present in the environment. Sign in with those
 credentials.
+
+That account is created with `must_change_password`, so the dashboard flags it
+until you rotate the password. Rotate it from **Settings → Change password**
+(available without an open database connection); the change requires the current
+password and revokes every other session for that account. You can then remove
+`ADMIN_INITIAL_PASSWORD` from the environment.
 
 ## Connecting to Neon
 

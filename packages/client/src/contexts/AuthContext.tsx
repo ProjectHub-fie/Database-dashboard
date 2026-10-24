@@ -15,6 +15,7 @@ interface AuthContextValue {
   login: (username: string, password: string) => Promise<MeResponse>
   logout: () => Promise<void>
   reauth: (password: string) => Promise<void>
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>
   /** True after a successful reauth within the TTL. */
   reauthedRecently: () => boolean
   busy: boolean
@@ -93,13 +94,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    setBusy(true)
+    try {
+      await api.post('/api/auth/change-password', { currentPassword, newPassword })
+      setMe((prev) =>
+        prev?.user ? { ...prev, user: { ...prev.user, mustChangePassword: false } } : prev,
+      )
+      setLastReauthAt(Date.now())
+    } finally {
+      setBusy(false)
+    }
+  }, [])
+
   const reauthedRecently = useCallback(() => {
     // Reauth is valid 10 minutes after confirmation (matches server TTL).
     return Date.now() - lastReauthAt < 10 * 60 * 1000
   }, [lastReauthAt])
 
   return (
-    <AuthContext.Provider value={{ me, connection, reloadConnection, login, logout, reauth, reauthedRecently, busy }}>
+    <AuthContext.Provider value={{ me, connection, reloadConnection, login, logout, reauth, changePassword, reauthedRecently, busy }}>
       {children}
     </AuthContext.Provider>
   )
