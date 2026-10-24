@@ -41,6 +41,54 @@ export function createRegistry(): ProviderRegistryImpl {
   return new ProviderRegistryImpl()
 }
 
+/**
+ * Providers we intend to support, described accurately. Nothing here is
+ * registered, connectable, or rendered as working — the UI lists these with
+ * `available: false` so an operator can see the roadmap without being able to
+ * select a connection mode that would fail.
+ *
+ * Implement a provider (see docs/PROVIDERS.md), register it in `createRegistry`,
+ * and remove its entry here; the UI reads the union of both.
+ */
+export const PLANNED_PROVIDERS: ReadonlyArray<{
+  id: string
+  name: string
+  kind: 'postgres' | 'mysql' | 'mariadb'
+  /** What still has to be built before it can be enabled. */
+  blockedBy: string
+}> = [
+  {
+    id: 'postgresql',
+    name: 'PostgreSQL (self-hosted)',
+    kind: 'postgres',
+    blockedBy: 'Needs an admin-controlled host allowlist; arbitrary hosts stay blocked to prevent SSRF.',
+  },
+  {
+    id: 'supabase',
+    name: 'Supabase',
+    kind: 'postgres',
+    blockedBy: 'Shares the PostgreSQL engine adapter; the Supabase management API adapter is not written yet.',
+  },
+  {
+    id: 'mysql',
+    name: 'MySQL',
+    kind: 'mysql',
+    blockedBy: 'Needs a mysql2 adapter (`?` placeholders, backtick quoting) and its own host policy.',
+  },
+  {
+    id: 'mariadb',
+    name: 'MariaDB',
+    kind: 'mariadb',
+    blockedBy: 'Same work as MySQL, plus MariaDB-specific catalog differences.',
+  },
+  {
+    id: 'aiven',
+    name: 'Aiven',
+    kind: 'postgres',
+    blockedBy: 'Needs an Aiven control-plane adapter and host policy.',
+  },
+]
+
 /** For contract tests: a provider must satisfy the full Provider interface. */
 export function assertProviderContract(provider: Provider<unknown>): void {
   if (!provider.info || typeof provider.info.id !== 'string') throw new Error('provider.info.id required')

@@ -8,14 +8,26 @@ import { NeonProvider } from '../providers/neon/provider.js'
 import { readOnlyRoles } from '../security/roles.js'
 import { config } from '../config.js'
 
+/** Optional operator label for the connection. Never used in SQL or URLs. */
+const displayNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  // Reject control characters so the label cannot forge log lines or UI text.
+  .refine((v) => !/[\u0000-\u001f\u007f]/.test(v), { message: 'Display name contains control characters' })
+  .optional()
+
 const connectUrlSchema = z.object({
   providerId: z.literal('neon'),
   connectionString: z.string().min(9).max(2000),
+  displayName: displayNameSchema,
 })
 
 const connectApiSchema = z.object({
   providerId: z.literal('neon'),
   apiKey: z.string().min(8).max(2000),
+  displayName: displayNameSchema,
 })
 
 export function connectionsRouter(): Router {
@@ -45,7 +57,7 @@ export function connectionsRouter(): Router {
   router.post('/url', async (req: Request, res: Response) => {
     const ctx = ctxOf(req)
     const sessionRef = String(res.locals.sessionRef ?? '')
-    const { connectionString } = connectUrlSchema.parse(req.body ?? {})
+    const { connectionString, displayName } = connectUrlSchema.parse(req.body ?? {})
     const provider = ctx.registry.require('neon') as NeonProvider
 
     // Host allowlisting, DNS pinning and TLS are all enforced by
@@ -83,6 +95,7 @@ export function connectionsRouter(): Router {
         database: verified.database,
         role: verified.role,
         readOnly,
+        ...(displayName ? { displayName } : {}),
       },
       secretHints: [decodedPass, verified.role, verified.database].filter((s) => s.length > 0),
     })
@@ -105,6 +118,7 @@ export function connectionsRouter(): Router {
         database: verified.database,
         role: verified.role,
         readOnly,
+        ...(displayName ? { displayName } : {}),
       },
       accountOnly: false,
       capabilities: ctx.registry.capabilities('neon'),
@@ -115,7 +129,7 @@ export function connectionsRouter(): Router {
   router.post('/api', async (req: Request, res: Response) => {
     const ctx = ctxOf(req)
     const sessionRef = String(res.locals.sessionRef ?? '')
-    const { apiKey } = connectApiSchema.parse(req.body ?? {})
+    const { apiKey, displayName } = connectApiSchema.parse(req.body ?? {})
     const provider = ctx.registry.require('neon') as NeonProvider
     const control = provider.controlPlaneFor(apiKey)
     const validation = await control.validateApiKey()
@@ -128,7 +142,13 @@ export function connectionsRouter(): Router {
       connection: null,
       controlPlane: control,
       accountOnly: true,
-      metadata: { host: 'console.neon.tech', database: '', role: '', readOnly: false },
+      metadata: {
+        host: 'console.neon.tech',
+        database: '',
+        role: '',
+        readOnly: false,
+        ...(displayName ? { displayName } : {}),
+      },
       secretHints: [apiKey],
       usageUntil: Date.now() + 4 * 60 * 60 * 1000,
     })
@@ -150,7 +170,13 @@ export function connectionsRouter(): Router {
     res.json({
       connected: true,
       auth: 'api',
-      metadata: { host: 'console.neon.tech', database: '', role: '', readOnly: false },
+      metadata: {
+        host: 'console.neon.tech',
+        database: '',
+        role: '',
+        readOnly: false,
+        ...(displayName ? { displayName } : {}),
+      },
       accountOnly: true,
       capabilities: ctx.registry.capabilities('neon'),
       organizations: validation.organizations ?? [],

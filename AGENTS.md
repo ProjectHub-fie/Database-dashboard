@@ -69,6 +69,16 @@ implemented provider. Build commands:
   body that fails schema validation falls through to `INTERNAL` and returns 500
   with schema internals. Route handlers should validate with Zod and let
   `asAppError` translate.
+- **Connection credentials require a dashboard session.** `POST
+  /api/connections/url` and `/api/connections/api` sit behind `requireAuth`, and
+  the session manager keys provider credentials by session id. The entry screen
+  keeps the connection tabs visible when signed out and hands over to the
+  account tab instead of hiding them; do not "fix" this by allowing anonymous
+  connection creation.
+- **`netlib.ts` error messages may name the host, never the password.** A masked
+  host (`***`) makes a rejected connection impossible to diagnose. The host has
+  already passed the charset allowlist at that point and is user-supplied, so
+  echo it; keep `redact()` covering the credential.
 - **Vercel hosts the SPA only.** `api/[...path].ts` reverse-proxies `/api/*` to
   `API_ORIGIN`; the Express API needs a persistent host because sessions are
   SQLite-backed and connection pools/secrets are in-memory. Keep the

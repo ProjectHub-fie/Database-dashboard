@@ -14,13 +14,21 @@ application.
 
 ## Highlights
 
-- **Two connection modes**
+- **Three entry modes on one screen** (`/login`, also served at `/connect`)
+  - *Dashboard account* — identifies the person; creates the HttpOnly session.
+    Required before either connection mode can open, because provider credentials
+    are bound to the session and every `/api` route is authorized per user.
   - *Database URL* — direct PostgreSQL connection to exactly one database. TLS is
     verified, outbound hosts are validated with DNS pinning (SSRF / DNS-rebinding
     protection), and account-level Neon management is intentionally unavailable.
-  - *Neon API key* — authenticated against the official Neon API. Projects,
-    organizations, branches, databases, compute endpoints, and asynchronous
-    operations are managed through the provider control-plane API.
+    "Test connection" validates the host and reports safe metadata (host, port,
+    database, role, whether the role is read-only) without connecting.
+  - *Neon API key* — verified against the official Neon API before a session is
+    created. Projects, organizations, branches, databases, compute endpoints, and
+    asynchronous operations are managed through the provider control-plane API.
+  - Both connection forms carry an optional operator display name (never a
+    credential) and are rendered from `GET /api/providers`, so planned providers
+    appear as clearly marked roadmap entries rather than fake options.
 - **Application authentication** — Argon2id password hashing, HttpOnly + SameSite
   session cookies, CSRF double-submit defense, login throttling, rate limits,
   session TTL + idle expiration, and session revocation.
@@ -156,7 +164,6 @@ The suite currently includes:
 
 | File | Coverage |
 | --- | --- |
-| --- | --- |
 | `providers/contract.test.ts` | provider registry + contract enforcement (6 tests) |
 | `adapters/sql-ident.test.ts` | safe identifier quoting (4 tests) |
 | `security/netlib.test.ts` | SSRF host guard / DNS pinning + TLS can't-be-disabled (10 tests) |
@@ -165,8 +172,11 @@ The suite currently includes:
 | `api/security.test.ts` | auth, CSRF, session isolation, disconnect revocation, recent-reauth gate (8 tests) |
 | `api/audit.test.ts` | audit log scoping + redaction (4 tests) |
 | `api/errors.test.ts` | safe error mapping (3 tests) |
+| `api/connection-modes.test.ts` | provider catalog, URL + API-key modes, secret-free responses, session isolation (18 tests) |
+| `adapters/postgres-catalog.test.ts` | `name[]` decoding regression (1 test) |
+| `adapters/engine-dialect.test.ts` | dialect boundary (2 tests) |
 
-**47/47 pass**, plus `tsc` clean on both packages.
+**84/84 pass**, plus `tsc` clean on both packages and both production builds.
 
 Runtime database and Neon API calls are mocked only in tests; the real
 application uses genuine PostgreSQL connections and Neon API v2 responses.
