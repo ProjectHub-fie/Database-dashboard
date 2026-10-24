@@ -34,20 +34,22 @@ interface NavItem {
   icon: ReactNode
   /** Sections that only apply to control-plane (API-key) mode. */
   controlOnly?: boolean
+  /** Sections that need a live SQL connection, which API-key mode lacks. */
+  needsDatabase?: boolean
 }
 
 const NAV: NavItem[] = [
   { to: '/overview', label: 'Overview', icon: <LayoutDashboard className="h-4 w-4" /> },
-  { to: '/data', label: 'Data Browser', icon: <Database className="h-4 w-4" /> },
-  { to: '/sql', label: 'SQL Studio', icon: <TerminalSquare className="h-4 w-4" /> },
-  { to: '/schema', label: 'Schema Manager', icon: <Table2 className="h-4 w-4" /> },
+  { to: '/data', label: 'Data Browser', icon: <Database className="h-4 w-4" />, needsDatabase: true },
+  { to: '/sql', label: 'SQL Studio', icon: <TerminalSquare className="h-4 w-4" />, needsDatabase: true },
+  { to: '/schema', label: 'Schema Manager', icon: <Table2 className="h-4 w-4" />, needsDatabase: true },
   { to: '/projects', label: 'Projects', icon: <FolderOpen className="h-4 w-4" />, controlOnly: true },
   { to: '/branches', label: 'Branches', icon: <GitBranch className="h-4 w-4" />, controlOnly: true },
   { to: '/databases', label: 'Databases', icon: <Layers className="h-4 w-4" />, controlOnly: true },
-  { to: '/roles', label: 'Roles & Access', icon: <KeyRound className="h-4 w-4" /> },
+  { to: '/roles', label: 'Roles & Access', icon: <KeyRound className="h-4 w-4" />, needsDatabase: true },
   { to: '/operations', label: 'Operations', icon: <Cog className="h-4 w-4" />, controlOnly: true },
-  { to: '/monitoring', label: 'Monitoring', icon: <Activity className="h-4 w-4" /> },
-  { to: '/io', label: 'Import / Export', icon: <ArrowUpDown className="h-4 w-4" /> },
+  { to: '/monitoring', label: 'Monitoring', icon: <Activity className="h-4 w-4" />, needsDatabase: true },
+  { to: '/io', label: 'Import / Export', icon: <ArrowUpDown className="h-4 w-4" />, needsDatabase: true },
   { to: '/settings', label: 'Settings', icon: <Settings className="h-4 w-4" /> },
   { to: '/security', label: 'Security & Audit', icon: <ShieldCheck className="h-4 w-4" /> },
 ]
@@ -83,11 +85,18 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const isControlPlane = auth.connection?.auth === 'api'
   const connected = auth.connection?.connected === true
+  // API-key sessions manage Neon resources but own no database connection, so
+  // data/SQL/schema sections would only ever answer "not available in this
+  // mode". Hide them instead of offering a click that leads nowhere.
+  const hasDatabase = connected && auth.connection?.accountOnly !== true
   // With no database connection only account-level pages are usable; showing
   // database pages would just bounce the operator back to the connect screen.
   const ACCOUNT_ONLY_NAV = new Set(['/settings', '/security'])
   const visibleNav = NAV.filter(
-    (n) => !(n.controlOnly && !isControlPlane) && (connected || ACCOUNT_ONLY_NAV.has(n.to)),
+    (n) =>
+      !(n.controlOnly && !isControlPlane) &&
+      !(n.needsDatabase && !hasDatabase) &&
+      (connected || ACCOUNT_ONLY_NAV.has(n.to)),
   )
 
   const segments = location.pathname.split('/').filter(Boolean)

@@ -131,10 +131,14 @@ export class ProviderSessionManager {
     if (!s.primaryQuerySession) {
       const provider = this.getProvider(s.providerId)
       if (!provider || !s.connection) {
+        // Not UNAUTHORIZED: the dashboard session is perfectly valid, this
+        // connection mode simply has no SQL surface. A 401 here made the client
+        // treat an API-key session as a lost connection and drop the operator
+        // back to the connect screen on their first click of any data page.
         throw new AppError({
-          code: 'UNAUTHORIZED',
+          code: s.accountOnly ? 'FEATURE_UNAVAILABLE' : 'UNAUTHORIZED',
           message: s.accountOnly
-            ? 'This connection manages Neon resources only and cannot run SQL. Connect with a database URL to use the SQL tools.'
+            ? 'This connection manages Neon resources only and cannot run SQL. Connect with a database URL for data, SQL and schema tools.'
             : 'No live database connection is available',
         })
       }

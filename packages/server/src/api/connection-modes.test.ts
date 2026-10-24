@@ -179,6 +179,35 @@ describe('Connection modes', () => {
     expect(t.neon._requests.some((r) => r.path === '/users/me')).toBe(true)
   })
 
+  it('answers database routes in API mode with FEATURE_UNAVAILABLE, never UNAUTHORIZED', async () => {
+    // Regression: a 401 here told the client its session was gone, so the UI
+    // dropped the operator back to the connect screen on the first click of any
+    // data page — an API-key session that "logs out" when used.
+    const t = await makeTestApp()
+    t.neon._setHandler('GET', '/users/me', () => ({ id: 'user-1', email: 'ops@example.com' }))
+    t.neon._setHandler('GET', '/users/me/organizations', () => ({ organizations: [{ id: 'org-1', name: 'Acme' }] }))
+    const creds = await seedUser(t.store, 'api-mode-user')
+
+    const { agent, csrfToken } = await login(t.app, creds.username, creds.password)
+    const connected = await agent.post('/api/connections/api', { providerId: 'neon', apiKey: 'neon_mode_key' }, csrfToken)
+    expect(connected.status).toBe(200)
+
+    for (const path of ['/api/data/stats', '/api/data/tree', '/api/data/tables', '/api/data/roles']) {
+      const res = await agent.get(path)
+      expect(res.status, `${path} must not be 401`).toBe(403)
+      expect(res.body.error.code).toBe('FEATURE_UNAVAILABLE')
+      expect(res.body.error.message).toMatch(/cannot run SQL/i)
+    }
+
+    // Control-plane routes still work, and the session is still alive.
+    t.neon._setHandler('GET', '/projects', () => ({ projects: [] }))
+    const projects = await agent.get('/api/control/projects')
+    expect(projects.status).toBe(200)
+    const status = await agent.get('/api/connections/status')
+    expect(status.body.connected).toBe(true)
+    expect(status.body.auth).toBe('api')
+  })
+
   it('fails safely on an invalid API key without leaking the key', async () => {
     const t = await makeTestApp()
     t.neon._setHandler('GET', '/users/me', () => {
