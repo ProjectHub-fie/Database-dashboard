@@ -32,7 +32,7 @@ describe('Audit router', () => {
     expect(res.body.events).toEqual([])
   })
 
-  it('lists audit events and redacts detail, showing only the callers own rows', async () => {
+  it('redacts credentials embedded in detail while keeping the useful text', async () => {
     store.setAuditEnabled(true, 30)
     const seedA = await seedUser(store, 'alice-audit', 'pw-123456!')
     const seedB = await seedUser(store, 'bob-audit', 'pw-123456!')
@@ -48,8 +48,14 @@ describe('Audit router', () => {
     expect(idA).toBeGreaterThan(0)
     expect(idB).toBeGreaterThan(0)
 
-    // Record an event carrying a fake secret; the audit write must strip it.
-    audit.write({ userId: idA, sessionId: null, event: 'sql.exec', status: 'ok', detail: 'ran query with super-secret-value-xyz' })
+    // Detail is diagnostic, so it must survive. Credentials inside it must not.
+    audit.write({
+      userId: idA,
+      sessionId: null,
+      event: 'sql.exec',
+      status: 'ok',
+      detail: 'connect postgresql://neondb_owner:super-secret-value-xyz@ep-x.neon.tech/neondb',
+    })
     audit.write({ userId: idB, sessionId: null, event: 'sql.exec', status: 'ok', detail: 'bob query detail' })
 
     const res = await loginA.agent.get('/api/audit')
@@ -60,6 +66,12 @@ describe('Audit router', () => {
       expect(ev.userId).toBe(idA)
       if (ev.detail) expect(ev.detail).not.toContain('super-secret-value-xyz')
     }
+    const sqlEvent = (res.body.events as Array<{ event: string; detail: string | null }>).find(
+      (e) => e.event === 'sql.exec',
+    )
+    // The surrounding context stays readable; only the password is replaced.
+    expect(sqlEvent?.detail).toContain('connect')
+    expect(sqlEvent?.detail).toContain('neondb')
     expect(res.body.events.length).toBeGreaterThanOrEqual(1)
     expect(res.body.events.some((e: { event: string }) => e.event === 'sql.exec')).toBe(true)
   })

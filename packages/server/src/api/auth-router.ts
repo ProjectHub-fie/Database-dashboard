@@ -11,6 +11,7 @@ import {
   AppCookieOptions,
 } from './cookies.js'
 import { sessionMiddleware, csrfProtection } from './middleware.js'
+import { loginThrottle } from '../security/login-throttle.js'
 
 const loginSchema = z.object({
   username: z.string().min(1).max(64),
@@ -27,7 +28,8 @@ const changePasswordSchema = z.object({
 export function authRouter(): Router {
   const router = Router()
 
-  // POST /api/auth/login — rate-limited separately in index.ts.
+  // POST /api/auth/login — the global limiter caps volume; loginThrottle adds
+  // failure-driven lockout so password guessing cannot use the full budget.
   router.post('/login', async (req: Request, res: Response) => {
     const ctx = ctxOf(req)
     const parsed = loginSchema.safeParse(req.body ?? {})
@@ -35,7 +37,44 @@ export function authRouter(): Router {
       throw new AppError({ code: 'BAD_REQUEST', message: 'Username and password are required' })
     }
     const { username, password } = parsed.data
-    const user = await ctx.auth.authenticate(username, password)
+    // `req.ip` honours the configured trust-proxy hops, so behind Vercel this is
+    // the real client rather than the shared proxy address. With proxy trust
+    // off it is the socket address. Never derived from a raw X-Forwarded-For.
+    const ip = req.ip ?? req.socket.remoteAddress
+
+    const decision = loginThrottle.check(ip, username)
+    if (!decision.allowed) {
+      const retryAfterSec = Math.ceil(decision.retryAfterMs / 1000)
+      ctx.audit.write({
+        userId: null,
+        sessionId: null,
+        event: 'auth.login',
+        status: 'warn',
+        target: username,
+        detail: `throttled scope=${decision.scope}`,
+      })
+      res.setHeader('Retry-After', String(retryAfterSec))
+      throw new AppError({
+        code: 'RATE_LIMITED',
+        message: `Too many failed sign-in attempts. Try again in ${Math.ceil(retryAfterSec / 60)} minute(s).`,
+      })
+    }
+
+    const user = await ctx.auth.authenticate(username, password).catch((err: unknown) => {
+      // Count only credential rejections; a database fault is not a guess.
+      if (err instanceof AppError && err.code === 'UNAUTHORIZED') {
+        loginThrottle.recordFailure(ip, username)
+        ctx.audit.write({
+          userId: null,
+          sessionId: null,
+          event: 'auth.login',
+          status: 'fail',
+          target: username,
+        })
+      }
+      throw err
+    })
+    loginThrottle.recordSuccess(ip, username)
     const created = ctx.auth.createSession(user, { ip: req.socket.remoteAddress })
     const opts = cookieOptions(req)
 

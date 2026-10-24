@@ -22,8 +22,12 @@ export class AuditService {
   }
 
   /**
-   * Record an audit event. `detail` may contain sensitive values — every field
-   * is redacted with the provided secret values before storage.
+   * Record an audit event. `detail` may embed credentials, so it is passed
+   * through the pattern-based redactor (auth headers, URL query params, SQL
+   * connection strings) before storage. It is deliberately NOT treated as a
+   * secret value itself: `redact()` replaces the entire string when it matches a
+   * secret, which would turn every detail into "[REDACTED]" and leave the audit
+   * log with no diagnostic value at all.
    */
   write(input: {
     userId: number | null
@@ -35,8 +39,6 @@ export class AuditService {
   }): void {
     const settings = this.store.getAuditSettings()
     if (!settings.enabled) return
-    const secretValues: string[] = []
-    if (input.detail) secretValues.push(input.detail)
     const event: Omit<AuditEvent, 'id'> = {
       userId: input.userId,
       sessionId: input.sessionId,
@@ -44,7 +46,7 @@ export class AuditService {
       actor: String(input.userId ?? 'anonymous'),
       status: input.status,
       target: input.target ?? null,
-      detail: input.detail ? redact(input.detail, { secrets: secretValues }) : null,
+      detail: input.detail ? redact(input.detail) : null,
       createdAt: Date.now(),
     }
     this.store.writeAudit(event)
