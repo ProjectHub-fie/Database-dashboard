@@ -6,6 +6,7 @@ import { useTheme } from '../contexts/ThemeContext'
 import { Button, Input, Label, Badge, Spinner } from '../components/ui'
 import { api, ApiError } from '../lib/api'
 import { ConnectionStatus, ProviderCatalogEntry } from '../lib/types'
+import { resolveCatalog, supportsAuthMethod, catalogIssueMessage } from '../lib/provider-catalog'
 import {
   Database,
   KeyRound,
@@ -85,11 +86,11 @@ export function LoginPage() {
   const [notice, setNotice] = useState<string | null>(null)
 
   const [providers, setProviders] = useState<ProviderCatalogEntry[] | null>(null)
-  const [providersError, setProvidersError] = useState(false)
+  const [catalogIssue, setCatalogIssue] = useState<string | null>(null)
   const [providerId, setProviderId] = useState('neon')
 
   const loadProviders = useCallback(() => {
-    setProvidersError(false)
+    setCatalogIssue(null)
     void api
       .get<{ providers: ProviderCatalogEntry[] }>('/api/providers')
       .then((r) => {
@@ -99,14 +100,29 @@ export function LoginPage() {
           setProviderId((current) => (r.providers.some((p) => p.id === current && p.available) ? current : usable.id))
         }
       })
-      .catch(() => setProvidersError(true))
+      .catch((err: unknown) => {
+        // A catalog failure must not blank the selector: the form would become
+        // unusable even though the API accepts the provider it already defaults
+        // to. Fall back to the single enabled provider and say so.
+        setProviders(null)
+        setCatalogIssue(catalogIssueMessage(err instanceof ApiError ? err.code : undefined))
+      })
   }, [])
 
   useEffect(loadProviders, [loadProviders])
 
-  const selected = useMemo(() => providers?.find((p) => p.id === providerId) ?? null, [providers, providerId])
-  const urlSupported = selected?.authMethods.includes('connection') ?? false
-  const apiSupported = selected?.authMethods.includes('api') ?? false
+  // `neon` is the only provider the server registers today; this keeps the
+  // connection forms usable when the catalog request fails.
+  const providerOptions = resolveCatalog({ providers, issue: catalogIssue })
+
+  const urlSupported = useMemo(
+    () => supportsAuthMethod(providerOptions, providerId, 'connection'),
+    [providerOptions, providerId],
+  )
+  const apiSupported = useMemo(
+    () => supportsAuthMethod(providerOptions, providerId, 'api'),
+    [providerOptions, providerId],
+  )
 
   function switchMode(next: Mode) {
     setPicked(next)
@@ -313,8 +329,8 @@ export function LoginPage() {
             {mode === 'url' && (
               <UrlPanel
                 signedIn={signedIn}
-                providers={providers}
-                providersError={providersError}
+                providers={providerOptions}
+                catalogIssue={catalogIssue}
                 onRetryProviders={loadProviders}
                 providerId={providerId}
                 setProviderId={setProviderId}
@@ -340,8 +356,8 @@ export function LoginPage() {
             {mode === 'api' && (
               <ApiPanel
                 signedIn={signedIn}
-                providers={providers}
-                providersError={providersError}
+                providers={providerOptions}
+                catalogIssue={catalogIssue}
                 onRetryProviders={loadProviders}
                 providerId={providerId}
                 setProviderId={setProviderId}
@@ -414,29 +430,19 @@ function TabButton({
 
 function ProviderField({
   providers,
-  providersError,
+  catalogIssue,
   onRetry,
   value,
   onChange,
   authMethod,
 }: {
   providers: ProviderCatalogEntry[] | null
-  providersError: boolean
+  catalogIssue: string | null
   onRetry: () => void
   value: string
   onChange: (id: string) => void
   authMethod: 'connection' | 'api'
 }) {
-  if (providersError) {
-    return (
-      <div className="rounded-lg border border-slate-200 px-3 py-2 text-[12px] text-slate-600 dark:border-slate-700 dark:text-slate-400">
-        Could not load the provider list.{' '}
-        <button type="button" onClick={onRetry} className="font-medium underline underline-offset-2">
-          Retry
-        </button>
-      </div>
-    )
-  }
   if (!providers) {
     return (
       <div className="flex items-center gap-2 text-[12px] text-slate-500 dark:text-slate-400">
@@ -465,6 +471,14 @@ function ProviderField({
         ))}
         {usable.length === 0 && <option value="">No provider supports this mode yet</option>}
       </select>
+      {catalogIssue && (
+        <p className="mt-1.5 text-[11px] leading-relaxed text-amber-700 dark:text-amber-400">
+          {catalogIssue}{' '}
+          <button type="button" onClick={onRetry} className="font-medium underline underline-offset-2">
+            Retry
+          </button>
+        </p>
+      )}
       {planned.length > 0 && (
         <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400 dark:text-slate-500">
           Planned, not available: {planned.map((p) => p.name).join(', ')}.
@@ -561,7 +575,7 @@ function AccountPanel(props: {
 function UrlPanel(props: {
   signedIn: boolean
   providers: ProviderCatalogEntry[] | null
-  providersError: boolean
+  catalogIssue: string | null
   onRetryProviders: () => void
   providerId: string
   setProviderId: (v: string) => void
@@ -590,7 +604,7 @@ function UrlPanel(props: {
       <div className="mt-5 space-y-4">
         <ProviderField
           providers={props.providers}
-          providersError={props.providersError}
+          catalogIssue={props.catalogIssue}
           onRetry={props.onRetryProviders}
           value={props.providerId}
           onChange={props.setProviderId}
@@ -674,7 +688,7 @@ function UrlPanel(props: {
 function ApiPanel(props: {
   signedIn: boolean
   providers: ProviderCatalogEntry[] | null
-  providersError: boolean
+  catalogIssue: string | null
   onRetryProviders: () => void
   providerId: string
   setProviderId: (v: string) => void
@@ -704,7 +718,7 @@ function ApiPanel(props: {
       <div className="mt-5 space-y-4">
         <ProviderField
           providers={props.providers}
-          providersError={props.providersError}
+          catalogIssue={props.catalogIssue}
           onRetry={props.onRetryProviders}
           value={props.providerId}
           onChange={props.setProviderId}
