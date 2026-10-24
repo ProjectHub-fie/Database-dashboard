@@ -19,6 +19,11 @@ const loginSchema = z.object({
 
 const reauthSchema = z.object({ password: z.string().min(1).max(512) })
 
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(512),
+  newPassword: z.string().min(12).max(512),
+})
+
 export function authRouter(): Router {
   const router = Router()
 
@@ -98,6 +103,43 @@ export function authRouter(): Router {
     ctx.store.markReauthed(sessionId, Date.now())
     ctx.audit.write({ userId, sessionId, event: 'auth.reauth', status: 'ok' })
     res.json({ ok: true, reauthUntil: Date.now() + config.sessionReauthTtlMs })
+  })
+
+  // POST /api/auth/change-password — rotate the dashboard account password.
+  // Requires the current password, then revokes every other session so a
+  // stolen cookie cannot outlive the rotation.
+  router.post('/change-password', async (req: Request, res: Response) => {
+    const ctx = ctxOf(req)
+    const parsed = changePasswordSchema.safeParse(req.body ?? {})
+    if (!parsed.success) {
+      throw new AppError({
+        code: 'BAD_REQUEST',
+        message: 'Current password and a new password of at least 12 characters are required',
+      })
+    }
+    const userId = res.locals.userId as number | undefined
+    const sessionId = res.locals.sessionRef as string | undefined
+    if (!userId || !sessionId) throw new AppError({ code: 'UNAUTHORIZED', message: 'Not signed in' })
+
+    const user = ctx.store.getUserById(userId)
+    if (!user) throw new AppError({ code: 'UNAUTHORIZED', message: 'Account not found' })
+
+    const { currentPassword, newPassword } = parsed.data
+    const ok = await ctx.auth.verifyPassword(user.passwordHash, currentPassword)
+    if (!ok) {
+      ctx.audit.write({ userId, sessionId, event: 'auth.change_password', status: 'fail' })
+      throw new AppError({ code: 'UNAUTHORIZED', message: 'Current password is incorrect' })
+    }
+    if (currentPassword === newPassword) {
+      throw new AppError({ code: 'BAD_REQUEST', message: 'New password must differ from the current one' })
+    }
+
+    ctx.store.updatePassword(userId, await ctx.auth.hashPassword(newPassword))
+    ctx.store.revokeAllSessions(userId, sessionId)
+    ctx.store.markReauthed(sessionId, Date.now())
+    ctx.audit.write({ userId, sessionId, event: 'auth.change_password', status: 'ok' })
+
+    res.json({ ok: true })
   })
 
   // GET /api/auth/me — current account + session state.

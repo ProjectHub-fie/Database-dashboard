@@ -82,7 +82,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [paletteOpen, setPaletteOpen] = useState(false)
 
   const isControlPlane = auth.connection?.auth === 'api'
-  const visibleNav = NAV.filter((n) => !(n.controlOnly && !isControlPlane))
+  const connected = auth.connection?.connected === true
+  // With no database connection only account-level pages are usable; showing
+  // database pages would just bounce the operator back to the connect screen.
+  const ACCOUNT_ONLY_NAV = new Set(['/settings', '/security'])
+  const visibleNav = NAV.filter(
+    (n) => !(n.controlOnly && !isControlPlane) && (connected || ACCOUNT_ONLY_NAV.has(n.to)),
+  )
 
   const segments = location.pathname.split('/').filter(Boolean)
   const crumbs = ['Home', ...segments.map((s) => decodeURIComponent(s.charAt(0).toUpperCase() + s.slice(1)))]

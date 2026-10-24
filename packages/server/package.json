@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "start": "NODE_ENV=production node dist/index.js",
+    "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
+    "start": "NODE_ENV=production node --env-file-if-exists=.env dist/index.js",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",

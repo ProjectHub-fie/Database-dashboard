@@ -40,7 +40,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   // Import location is packages/server/src (tsx) or packages/server/dist (built).
   const here = path.dirname(fileURLToPath(import.meta.url))
   const serverRoot = path.resolve(here, '..')
-  const dataDir = path.join(serverRoot, 'data')
+  const dataDir = env.DATA_DIR
+    ? path.resolve(env.DATA_DIR)
+    : path.join(serverRoot, 'data')
 
   return {
     port: int(env.PORT, 3001),

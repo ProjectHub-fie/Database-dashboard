@@ -106,6 +106,8 @@ export class Store {
     }
     this.db = new DatabaseSyncCtor(dbPath)
     this.db.exec('PRAGMA journal_mode = WAL;')
+    // Wait for a competing writer instead of failing with SQLITE_BUSY.
+    this.db.exec('PRAGMA busy_timeout = 5000;')
     this.db.exec('PRAGMA foreign_keys = ON;')
     migrate(this.db)
     this.logger = opts.logger ?? createLogger()

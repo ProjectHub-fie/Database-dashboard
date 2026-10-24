@@ -64,10 +64,31 @@ export interface ProviderCapabilities {
 export interface ProviderInfo {
   id: string
   name: string
-  kind: 'postgres' // database engine family
+  /** Database engine family. Only `postgres` is implemented in this release. */
+  kind: 'postgres' | 'mysql' | 'mariadb'
   controlPlane: boolean
   apiBaseUrl?: string
   apiDocs: string
+}
+
+/**
+ * Engine dialect descriptor.
+ *
+ * The shared API layer never builds SQL text, so every dialect difference has to
+ * be declared by the engine adapter rather than assumed. This is what keeps
+ * PostgreSQL syntax (`$1` placeholders, double-quoted identifiers, a separate
+ * schema namespace) from leaking into an engine with different rules — MySQL
+ * uses `?` placeholders, backticks, and its database *is* the schema layer.
+ */
+export interface EngineDialect {
+  kind: 'postgres' | 'mysql' | 'mariadb'
+  /** Placeholder text for the Nth positional parameter (1-based). */
+  placeholder: (position: number) => string
+  /** Quote a single identifier using the engine's own rules. */
+  quoteIdentifier: (name: string) => string
+  defaultPort: number
+  /** `namespace` = schemas inside one database; `database` = database is the schema. */
+  schemaModel: 'namespace' | 'database'
 }
 
 export interface ConnectionMetadata {
@@ -294,6 +315,11 @@ export interface SqlExecutionOptions {
 
 export interface DatabaseAdapter<Conn = unknown> {
   readonly kind: 'postgres' | string
+  /**
+   * Declared engine dialect. Required so a MySQL/MariaDB adapter can plug in
+   * without the shared layer assuming PostgreSQL placeholder/quoting rules.
+   */
+  readonly dialect: EngineDialect
   /**
    * Execute a single statement with fully parameterized values and safely
    * quoted identifiers resolved by the caller. Options may be applied server
