@@ -196,7 +196,7 @@ describe('Connection modes', () => {
       const res = await agent.get(path)
       expect(res.status, `${path} must not be 401`).toBe(403)
       expect(res.body.error.code).toBe('FEATURE_UNAVAILABLE')
-      expect(res.body.error.message).toMatch(/cannot run SQL/i)
+      expect(res.body.error.message).toMatch(/no database is attached/i)
     }
 
     // Control-plane routes still work, and the session is still alive.

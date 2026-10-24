@@ -17,6 +17,11 @@ export interface ConnectionMetadata {
   readOnly: boolean
   /** Optional operator label. Never a credential. */
   displayName?: string
+  /** Control-plane coordinates, set when a database was picked in API mode. */
+  projectId?: string
+  projectName?: string
+  branchId?: string
+  branchName?: string
 }
 
 /**

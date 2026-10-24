@@ -435,6 +435,37 @@ export class NeonControlPlane implements ControlPlaneAdapter {
     return parseConnectionUri(res.uri)
   }
 
+  /**
+   * Credential-bearing URI for opening a SQL session from an API key. The caller
+   * is responsible for validating the host and keeping the value server-side.
+   */
+  async getConnectionUri(input: {
+    projectId: string
+    databaseName: string
+    branchId?: string
+    role?: string
+    pooled?: boolean
+  }): Promise<string> {
+    const query: Record<string, string> = { database_name: input.databaseName }
+    if (input.branchId) query.branch_id = input.branchId
+    if (input.role) query.role_name = input.role
+    if (input.pooled !== undefined) query.pooled = input.pooled ? 'true' : 'false'
+    const res = await this.http.request<{ uri: string }>({
+      method: 'GET',
+      path: `/projects/${encodeURIComponent(input.projectId)}/connection_uri`,
+      query,
+      apiKey: this.apiKey,
+    })
+    if (!res?.uri || typeof res.uri !== 'string') {
+      throw new AppError({
+        code: 'PROVIDER_ERROR',
+        message: 'Neon did not return a connection URI for that database',
+        detail: 'connection_uri response missing uri',
+      })
+    }
+    return res.uri
+  }
+
   async getOperation(input: { operationId: string; projectId?: string }): Promise<ProviderOperation> {
     if (!input.projectId) {
       throw new AppError({ code: 'BAD_REQUEST', message: 'Operation lookup requires a project id' })

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
 import { api, ApiError } from '../lib/api'
 import { Project, Branch, Database, ProviderOperation } from '../lib/types'
 import { Button, Card, Badge, EmptyState, Input, Label, Select, Modal, ConfirmDialog, Skeleton } from '../components/ui'
-import { Layers, Plus, Trash2, Server, Copy } from 'lucide-react'
+import { Layers, Plus, Trash2, Server, Copy, Plug, PlugZap } from 'lucide-react'
 import { capabilitiesOf } from '../lib/capabilities'
 
 export function DatabasesPage() {
@@ -29,6 +29,8 @@ export function DatabasesPage() {
   const [confirmText, setConfirmText] = useState('')
   const [connInfo, setConnInfo] = useState<{ displayName: string; host: string; port: number; database: string; role: string } | null>(null)
   const [copyText, setCopyText] = useState('')
+  const [attaching, setAttaching] = useState<string | null>(null)
+  const nav = useNavigate()
 
   const capabilities = capabilitiesOf(auth.connection)
   const canCreate = capabilities.includes('control.createDatabase')
@@ -111,6 +113,34 @@ export function DatabasesPage() {
       .catch((err) => toast('error', err instanceof ApiError ? err.message : 'Delete failed'))
   }
 
+  const attachedDatabase =
+    auth.connection?.auth === 'api' && auth.connection?.accountOnly !== true
+      ? auth.connection.metadata?.database
+      : undefined
+
+  /**
+   * Open a real SQL session for this database using the API key that is already
+   * on the server. The credential never crosses to the browser: the server asks
+   * Neon for a URI, verifies and pins the host, and returns metadata only.
+   */
+  async function useDatabase(db: Database) {
+    setAttaching(db.name)
+    try {
+      await api.post('/api/connections/database', {
+        projectId: db.projectId,
+        branchId: db.branchId,
+        databaseName: db.name,
+      })
+      await auth.reloadConnection()
+      toast('success', `Connected to ${db.name}`, 'Data, SQL and schema tools are now available.')
+      nav('/overview')
+    } catch (err) {
+      toast('error', err instanceof ApiError ? err.message : 'Could not open a database connection')
+    } finally {
+      setAttaching(null)
+    }
+  }
+
   async function getConnectionString(db: Database) {
     try {
       const r = await api.get<{ info: { displayName: string; host: string; port: number; database: string; role: string } }>(
@@ -147,6 +177,17 @@ export function DatabasesPage() {
         </div>
       </div>
 
+      {auth.connection?.auth === 'api' && auth.connection?.accountOnly === true && (
+        <Card className="border-sky-200 bg-sky-50/60 p-3 dark:border-sky-900/60 dark:bg-sky-950/30">
+          <p className="text-[12.5px] text-slate-700 dark:text-slate-300">
+            The API key manages Neon resources. Choose <strong>Use database</strong> on a database
+            below to open a SQL session — Data Browser, SQL Studio and Schema Manager become
+            available once a database is attached. Permissions still come from the role the URI
+            uses, not from this dashboard.
+          </p>
+        </Card>
+      )}
+
       {state === 'loading' && <Skeleton className="h-32 w-full" />}
       {state === 'error' && <EmptyState title="Could not load databases" description={error} />}
       {state === 'ready' && databases.length === 0 && (
@@ -163,6 +204,20 @@ export function DatabasesPage() {
                   {d.owner && <Badge tone="slate">owner {d.owner}</Badge>}
                 </div>
                 <div className="flex items-center gap-1">
+                  <Button
+                    size="sm"
+                    variant={attachedDatabase === d.name ? 'secondary' : 'primary'}
+                    loading={attaching === d.name}
+                    disabled={Boolean(attaching) || attachedDatabase === d.name}
+                    onClick={() => void useDatabase(d)}
+                    title="Open a SQL session on this database with the API key"
+                  >
+                    {attachedDatabase === d.name ? (
+                      <><PlugZap className="h-3.5 w-3.5" /> Connected</>
+                    ) : (
+                      <><Plug className="h-3.5 w-3.5" /> Use database</>
+                    )}
+                  </Button>
                   <button onClick={() => void getConnectionString(d)} className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-indigo-600 dark:hover:bg-slate-700" title="Connection info">
                     <Server className="h-4 w-4" />
                   </button>

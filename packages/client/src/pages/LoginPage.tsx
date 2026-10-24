@@ -825,8 +825,8 @@ function ApiPanel(props: {
                   : `${props.orgs.length} organization(s): ${props.orgs.map((o) => o.name).join(', ')}`}
             </p>
             <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
-              Control-plane access only — no SQL connection is open yet. Pick a project, branch and
-              database in the dashboard to query one.
+              The key manages Neon resources. To run SQL you also attach a database: open
+              Databases, then choose “Use database” on the one you want.
             </p>
             <Button type="button" size="sm" onClick={props.onOpen} className="mt-2.5">
               Open dashboard <ArrowRight className="h-3.5 w-3.5" />
