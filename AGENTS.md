@@ -60,6 +60,21 @@ implemented provider. Build commands:
   success.
 ## Gotchas found in practice
 
+- **Organization-scoped Neon API keys get 404 on `GET /users/me`.** Neon returns
+  404 "not allowed for organization API keys", not 401. Treating that as an
+  invalid credential rejects perfectly good keys. `validateApiKey()` confirms
+  such keys via `/projects` and returns `organizationScoped: true`; only a real
+  401 fails validation.
+- **A connection session can vanish mid-session.** Idle expiry, a backend
+  restart, or a failover to an instance that never held the pool all produce
+  `401 UNAUTHORIZED`. The client emits `onConnectionLost()` for non-auth 401s,
+  `AuthContext` clears `connected`, and `RequireConnection` returns the user to
+  `/connect`. Never render dashboard chrome from a cached status without it.
+- **Advertise only capabilities the current auth can actually use.**
+  `capabilitiesForAuth(caps, 'connection')` strips `control.*` and
+  `monitoring.*`; without it a database-URL session shows provider-management
+  navigation that the server answers with 401.
+
 - **`Set` never survives JSON — capability ids must be serialized explicitly.**
   Providers declare `capabilities` as a `ReadonlySet<Capability>`;
   `JSON.stringify(new Set([...]))` is `{}`, so any endpoint returning the raw
