@@ -77,6 +77,29 @@ function isConnectFailure(err: unknown): boolean {
 
 const IDEMPOTENT = new Set(['GET', 'HEAD', 'OPTIONS'])
 
+/**
+ * A dead workspace tunnel does not refuse the connection — it accepts it and
+ * then never answers, so an unbounded fetch waits until the platform kills the
+ * function and the client sees a bare `502 Bad Gateway` (plain text from
+ * Vercel, not this handler). Bounding each attempt is what lets the next origin
+ * be tried at all.
+ */
+const UPSTREAM_TIMEOUT_MS = 6000
+
+/** Statuses a fronting proxy emits when the origin is unreachable. */
+const GATEWAY_STATUSES = new Set([502, 503, 504])
+
+/**
+ * `true` when a gateway status came from infrastructure rather than the API
+ * itself. The API always answers with the `{ error: { code, message } }`
+ * envelope, so a non-JSON 502 is safe to retry on another origin.
+ */
+async function isInfrastructureGateway(res: Response): Promise<boolean> {
+  if (!GATEWAY_STATUSES.has(res.status)) return false
+  const type = res.headers.get('content-type') ?? ''
+  return !type.includes('application/json')
+}
+
 function parseOrigin(raw: string | undefined): string | undefined {
   if (!raw) return undefined
   const trimmed = raw.replace(/\/+$/, '')
@@ -141,17 +164,31 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const method = req.method ?? 'GET'
   const mayFailover = IDEMPOTENT.has(method)
   let upstreamRes: Response | undefined
+  let servedBy: string | undefined
   let lastCode = 'UPSTREAM_UNAVAILABLE'
 
-  for (const origin of usable) {
+  for (const [index, origin] of usable.entries()) {
+    const isLast = index === usable.length - 1
     const upstream = new URL(incoming.startsWith('/') ? incoming : `/${incoming}`, origin)
     try {
-      upstreamRes = await fetch(upstream, {
+      const attempt = await fetch(upstream, {
         method,
         headers,
         body: body && body.byteLength ? new Uint8Array(body) : undefined,
         redirect: 'manual',
+        signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
       })
+
+      // The origin is reachable but its fronting tunnel is failing. Retrying a
+      // read elsewhere is free; a write could not have been applied if the
+      // tunnel itself returned the error, so that is safe too.
+      if (!isLast && (await isInfrastructureGateway(attempt))) {
+        lastCode = 'UPSTREAM_UNAVAILABLE'
+        continue
+      }
+
+      upstreamRes = attempt
+      servedBy = index === 0 ? 'primary' : 'fallback'
       break
     } catch (err) {
       // A write whose connection broke after the request was sent may already
@@ -175,6 +212,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   }
 
   res.statusCode = upstreamRes.status
+  if (servedBy) res.setHeader('x-dbh-origin', servedBy)
 
   upstreamRes.headers.forEach((value, key) => {
     if (key.toLowerCase() === 'set-cookie') return

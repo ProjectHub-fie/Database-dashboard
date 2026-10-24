@@ -153,6 +153,65 @@ describe('vercel api proxy failover', () => {
     expect(res.statusCode).toBe(200)
   })
 
+  it('fails over when the origin tunnel answers with a non-JSON gateway error', async () => {
+    // A dead workspace tunnel hangs, then the platform times out and returns
+    // plain-text 502 from Vercel itself. That is not an exception, so it has to
+    // be recognised by status + content-type or failover never runs.
+    vi.stubEnv('API_ORIGIN', 'https://api-a.example.com')
+    vi.stubEnv('API_ORIGIN_FALLBACK', 'https://api-b.example.com')
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('Bad Gateway', { status: 502, headers: { 'content-type': 'text/plain' } }))
+      .mockResolvedValueOnce(new Response('{"providers":[]}', { status: 200 }))
+    const handler = await loadHandler()
+    const { res, headers } = makeRes()
+
+    await handler(makeReq({ host: 'dbremote.vercel.app' }), res)
+
+    expect(res.statusCode).toBe(200)
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+    expect(headers['x-dbh-origin']).toBe('fallback')
+  })
+
+  it('passes through a JSON 502 from the API instead of retrying', async () => {
+    // The app always answers with its own error envelope; that must be returned
+    // verbatim, not treated as infrastructure failure.
+    vi.stubEnv('API_ORIGIN', 'https://api-a.example.com')
+    vi.stubEnv('API_ORIGIN_FALLBACK', 'https://api-b.example.com')
+    const appError = JSON.stringify({ error: { code: 'UPSTREAM_UNAVAILABLE', message: 'nope' } })
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(appError, { status: 502, headers: { 'content-type': 'application/json' } }))
+    const handler = await loadHandler()
+    const { res, body, headers } = makeRes()
+
+    await handler(makeReq({ host: 'dbremote.vercel.app' }), res)
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(res.statusCode).toBe(502)
+    expect(JSON.parse(body()).error.code).toBe('UPSTREAM_UNAVAILABLE')
+    expect(headers['x-dbh-origin']).toBe('primary')
+  })
+
+  it('bounds each upstream attempt so a hung tunnel cannot reach the platform timeout', async () => {
+    vi.stubEnv('API_ORIGIN', 'https://api-a.example.com')
+    vi.stubEnv('API_ORIGIN_FALLBACK', 'https://api-b.example.com')
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValueOnce(Object.assign(new Error('timed out'), { name: 'TimeoutError' }))
+      .mockResolvedValueOnce(new Response('{"providers":[]}', { status: 200 }))
+    const handler = await loadHandler()
+    const { res } = makeRes()
+
+    await handler(makeReq({ host: 'dbremote.vercel.app' }), res)
+
+    expect(res.statusCode).toBe(200)
+    // Every attempt must carry an abort signal, or the request has no ceiling.
+    for (const call of fetchSpy.mock.calls) {
+      expect((call[1] as RequestInit).signal).toBeDefined()
+    }
+  })
+
   it('reports 502 with an actionable code when every origin is down', async () => {
     vi.stubEnv('API_ORIGIN', 'https://api-a.example.com')
     vi.stubEnv('API_ORIGIN_FALLBACK', 'https://api-b.example.com')
