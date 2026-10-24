@@ -6,6 +6,7 @@ import { api, ApiError } from '../lib/api'
 import { Project, Branch, ProviderOperation } from '../lib/types'
 import { Button, Card, Badge, EmptyState, Input, Label, Select, Modal, ConfirmDialog, Skeleton } from '../components/ui'
 import { GitBranch, Plus, Trash2, Clock, Star } from 'lucide-react'
+import { capabilitiesOf } from '../lib/capabilities'
 
 export function BranchesPage() {
   const auth = useAuth()
@@ -25,7 +26,7 @@ export function BranchesPage() {
   const [deleteTarget, setDeleteTarget] = useState<Branch | null>(null)
   const [confirmText, setConfirmText] = useState('')
 
-  const capabilities = auth.connection?.capabilities?.capabilities ?? []
+  const capabilities = capabilitiesOf(auth.connection)
   const canCreate = capabilities.includes('control.createBranch')
   const canDelete = capabilities.includes('control.deleteBranch')
 

@@ -107,6 +107,17 @@ export async function createApp(): Promise<{
     res.json({ requests: recentRequests(100) })
   })
 
+  // Never cache API responses. The API mints the anonymous/session CSRF cookie
+  // lazily, and a cached or 304 response (Express ETags, Vercel edge) can drop
+  // Set-Cookie — leaving the browser without the `dbh_csrf` cookie and causing
+  // spurious "Invalid or missing CSRF token" 403s on the first state-changing
+  // request. Session endpoints must also never be stored by intermediaries.
+  app.use('/api', (_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('Cache-Control', 'no-store')
+    res.setHeader('Pragma', 'no-cache')
+    next()
+  })
+
   // Global rate limit (sane defaults; tightened per-route where relevant).
   app.use(
     '/api/',
