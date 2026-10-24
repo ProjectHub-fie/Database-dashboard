@@ -5,6 +5,7 @@ import { Project, ProviderOperation, Endpoint } from '../lib/types'
 import { Badge, Button, Card, EmptyState, Select, Skeleton } from '../components/ui'
 import { Cog, RefreshCw, Server, Activity, Clock } from 'lucide-react'
 import { cn } from '../lib/cn'
+import { capabilitiesOf } from '../lib/capabilities'
 
 export function OperationsPage() {
   const auth = useAuth()
@@ -17,7 +18,7 @@ export function OperationsPage() {
   const [error, setError] = useState<string | null>(null)
 
   const accountOnly = auth.connection?.accountOnly === true
-  const capabilities = auth.connection?.capabilities?.capabilities ?? []
+  const capabilities = capabilitiesOf(auth.connection)
 
   const load = useCallback(async () => {
     if (!selectedProject) {

@@ -6,6 +6,7 @@ import { api, ApiError } from '../lib/api'
 import { Project, Organization, ProviderOperation } from '../lib/types'
 import { Button, Card, Badge, EmptyState, Input, Label, Select, Modal, ConfirmDialog, Skeleton } from '../components/ui'
 import { FolderOpen, Plus, Globe2, MapPin, Trash2, Clock } from 'lucide-react'
+import { capabilitiesOf } from '../lib/capabilities'
 
 export function ProjectsPage() {
   const auth = useAuth()
@@ -25,7 +26,7 @@ export function ProjectsPage() {
   const [busyOp, setBusyOp] = useState<ProviderOperation | null>(null)
 
   const accountOnly = auth.connection?.accountOnly === true
-  const capabilities = auth.connection?.capabilities?.capabilities ?? []
+  const capabilities = capabilitiesOf(auth.connection)
   const canCreate = capabilities.includes('control.createProject')
   const canDelete = capabilities.includes('control.deleteProject')
 

@@ -78,6 +78,19 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     sendJson(res, 503, 'API_NOT_CONFIGURED', 'API_ORIGIN must be an http(s) URL.')
     return
   }
+  // A self-referential API_ORIGIN makes this function call itself; Vercel
+  // reports that as a bare 508 loop rather than a fixable error. Detect it
+  // here so a misconfiguration produces one actionable response.
+  const ownHost = String(req.headers['x-forwarded-host'] ?? req.headers.host ?? '').split(':')[0]
+  if (target.hostname === ownHost) {
+    sendJson(
+      res,
+      503,
+      'API_ORIGIN_LOOP',
+      'API_ORIGIN points at this deployment. Set it to the URL of the persistent DB Horizon API server.',
+    )
+    return
+  }
 
   const incoming = req.url ?? '/'
   const upstream = new URL(incoming.startsWith('/') ? incoming : `/${incoming}`, origin)

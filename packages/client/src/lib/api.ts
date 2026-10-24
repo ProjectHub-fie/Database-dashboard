@@ -21,6 +21,33 @@ function readCookie(name: string): string | undefined {
   return m ? decodeURIComponent(m[1]) : undefined
 }
 
+/**
+ * Force the server to (re)issue the CSRF cookie.
+ *
+ * The cookie is minted lazily on any `/api` response, so a browser holding a
+ * stale pair — anonymous session expired, or the backend restarted and lost its
+ * in-memory store — would otherwise send a token the server no longer knows and
+ * get a 403 on its first write. A same-origin GET re-mints it. Concurrent
+ * callers share one request.
+ */
+let csrfBootstrap: Promise<void> | null = null
+
+function ensureCsrfCookie(): Promise<void> {
+  if (!csrfBootstrap) {
+    csrfBootstrap = fetch(`${API_BASE}/api/auth/me`, {
+      credentials: 'include',
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+    })
+      .then(() => undefined)
+      .catch(() => undefined)
+      .finally(() => {
+        csrfBootstrap = null
+      })
+  }
+  return csrfBootstrap
+}
+
 export class ApiError extends Error {
   readonly code: string
   readonly status: number
@@ -41,7 +68,7 @@ export interface RequestOptions {
   timeoutMs?: number
 }
 
-async function doRequest<T>(path: string, opts: RequestOptions): Promise<T> {
+async function doRequest<T>(path: string, opts: RequestOptions, csrfRetry = true): Promise<T> {
   const { method = 'GET', query, body, timeoutMs = 60_000 } = opts
   let url = `${API_BASE}${path}`
   if (query) {
@@ -58,9 +85,10 @@ async function doRequest<T>(path: string, opts: RequestOptions): Promise<T> {
   }
   const isStateChanging = !['GET', 'HEAD', 'OPTIONS'].includes(method)
   if (isStateChanging) {
-    const csrf = readCookie(CSRF_COOKIE)
-    headers['x-csrf-token'] = csrf ?? ''
-    // Include credentials so cookies are sent for same-origin + dev proxy.
+    // No cookie yet (first visit, or a write fired before any API read): ask the
+    // server for one instead of sending an empty header and collecting a 403.
+    if (!readCookie(CSRF_COOKIE)) await ensureCsrfCookie()
+    headers['x-csrf-token'] = readCookie(CSRF_COOKIE) ?? ''
   }
   if (body !== undefined) headers['Content-Type'] = 'application/json'
 
@@ -73,6 +101,7 @@ async function doRequest<T>(path: string, opts: RequestOptions): Promise<T> {
       // `include` is required for split-origin deployments (static frontend on
       // Vercel, API elsewhere); same-origin requests behave identically.
       credentials: 'include',
+      cache: 'no-store',
       body: body !== undefined ? JSON.stringify(body) : undefined,
       signal: controller.signal,
     })
@@ -85,7 +114,15 @@ async function doRequest<T>(path: string, opts: RequestOptions): Promise<T> {
       data = null
     }
     if (!res.ok) {
-      throw new ApiError(res.status, (data as ApiErrorBody) ?? undefined)
+      const apiError = new ApiError(res.status, (data as ApiErrorBody) ?? undefined)
+      // Stale anonymous session (e.g. the backend restarted): re-mint the cookie
+      // and retry the same request exactly once. Never retries blindly, so a
+      // genuinely rejected write is surfaced unchanged.
+      if (csrfRetry && apiError.status === 403 && /csrf/i.test(apiError.message)) {
+        await ensureCsrfCookie()
+        return doRequest<T>(path, opts, false)
+      }
+      throw apiError
     }
     return data as T
   } catch (err) {

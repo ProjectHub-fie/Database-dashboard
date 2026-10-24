@@ -22,6 +22,7 @@ import { schemaRouter } from '../api/schema-router.js'
 import { controlPlaneRouter } from '../api/control-plane-router.js'
 import { auditRouter } from '../api/audit-router.js'
 import { forwardAsyncErrors } from '../api/async-errors.js'
+import { requestLogMiddleware, recentRequests } from '../lib/request-log.js'
 
 export interface MockNeonHttpClient extends NeonHttpClient {
   _seenKeys: Set<string>
@@ -111,6 +112,8 @@ export async function makeTestApp(
   app.disable('x-powered-by')
   app.use(cookieParser())
   app.use(express.json({ limit: '1mb' }))
+  app.use(requestLogMiddleware())
+  app.get('/api/debug/requests', (_req, res) => res.json({ requests: recentRequests(100) }))
   app.use('/api', sessionMiddleware())
   app.use('/api', anonymousSession(anonSessions, opts.authRequired ?? true))
   app.use('/api/auth', authRouter())

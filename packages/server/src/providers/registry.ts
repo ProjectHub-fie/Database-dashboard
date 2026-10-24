@@ -37,6 +37,21 @@ export class ProviderRegistryImpl implements ProviderRegistry {
   }
 }
 
+/**
+ * Wire form of `ProviderCapabilities`.
+ *
+ * The registry declares capability ids as a `Set`, which JSON.stringify turns
+ * into `{}` — dropping every id and making the browser's `capabilities.includes`
+ * throw. Every API response that exposes capabilities must go through this so
+ * the client always receives an array.
+ */
+export function serializeCapabilities(
+  caps: ProviderCapabilities | undefined,
+): { auth: string[]; capabilities: string[] } {
+  if (!caps) return { auth: [], capabilities: [] }
+  return { auth: [...caps.auth], capabilities: [...caps.capabilities].sort() }
+}
+
 export function createRegistry(): ProviderRegistryImpl {
   return new ProviderRegistryImpl()
 }

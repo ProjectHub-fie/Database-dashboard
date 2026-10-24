@@ -147,6 +147,22 @@ export class Store {
       .run(passwordHash, userId)
   }
 
+  updateUserCredentials(username: string, passwordHash: string): User {
+    // Updates an existing user or creates it (reset tool / idle recovery).
+    // Keeps must_change_password=1 so whoever is provisioned next is forced
+    // to rotate before relying on the environment-provided password.
+    const existing = this.getUserByUsername(username)
+    if (existing) {
+      this.db
+        .prepare(
+          'UPDATE users SET username = ?, password_hash = ?, must_change_password = 1 WHERE id = ?',
+        )
+        .run(username, passwordHash, existing.id)
+      return this.getUserById(existing.id)!
+    }
+    return this.createUser(username, passwordHash)
+  }
+
   deleteUser(userId: number): void {
     this.db.prepare('DELETE FROM users WHERE id = ?').run(userId)
   }

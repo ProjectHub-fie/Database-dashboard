@@ -10,7 +10,20 @@
       "maxDuration": 60
     }
   },
-  "rewrites": [{ "source": "/((?!assets/|api/).*)", "destination": "/index.html" }],
+  "routes": [
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "^/api(?:/(.*))$",
+      "dest": "/api/[...path]",
+      "continue": true
+    },
+    {
+      "src": "^(?:/((?!assets/|api/).*))$",
+      "dest": "/index.html"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",

@@ -16,6 +16,8 @@ function fail(req: Request, res: Response, error: unknown, ctx: AppContext): voi
   const isServerError = err.status >= 500
   const secretHints = ctx.providerSessions.secretHints(String(req.headers['x-session-ref'] ?? ''))
 
+  res.locals.error = { code: err.code, status: err.status, message: err.message }
+
   const common = {
     err: { code: err.code, status: err.status, message: err.message, detail: err.detail },
     secrets: secretHints,

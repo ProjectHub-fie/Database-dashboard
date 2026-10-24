@@ -23,6 +23,7 @@ import { schemaRouter } from './api/schema-router.js'
 import { controlPlaneRouter } from './api/control-plane-router.js'
 import { auditRouter } from './api/audit-router.js'
 import { forwardAsyncErrors } from './api/async-errors.js'
+import { requestLogMiddleware, recentRequests } from './lib/request-log.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const config = loadConfig()
@@ -94,6 +95,26 @@ export async function createApp(): Promise<{
   app.use((req: Request, res: Response, next: NextFunction) => {
     const rid = req.headers['x-request-id'] || crypto.randomUUID()
     res.setHeader('x-request-id', String(rid))
+    next()
+  })
+
+  // Debug diagnostics: capture method/path/status/duration for every request
+  // into a redacted ring buffer, and expose the recent entries for support.
+  // Read-only and contains no secrets (paths are truncated, bodies/query/
+  // cookies excluded), so it is safe to serve without a login.
+  app.use(requestLogMiddleware())
+  app.get('/api/debug/requests', (_req: Request, res: Response) => {
+    res.json({ requests: recentRequests(100) })
+  })
+
+  // Never cache API responses. The API mints the anonymous/session CSRF cookie
+  // lazily, and a cached or 304 response (Express ETags, Vercel edge) can drop
+  // Set-Cookie — leaving the browser without the `dbh_csrf` cookie and causing
+  // spurious "Invalid or missing CSRF token" 403s on the first state-changing
+  // request. Session endpoints must also never be stored by intermediaries.
+  app.use('/api', (_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('Cache-Control', 'no-store')
+    res.setHeader('Pragma', 'no-cache')
     next()
   })
 

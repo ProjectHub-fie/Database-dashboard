@@ -5,6 +5,7 @@ import { api, ApiError } from '../lib/api'
 import { SchemaObjectSummary, TableInfo } from '../lib/types'
 import { Button, Card, Badge, EmptyState, Label, Select } from '../components/ui'
 import { ArrowUpDown, Upload, Download, AlertTriangle, FileJson, FileText, CheckCircle2 } from 'lucide-react'
+import { capabilitiesOf } from '../lib/capabilities'
 
 export function ImportExportPage() {
   const auth = useAuth()
@@ -29,7 +30,7 @@ export function ImportExportPage() {
 
   const readOnly = auth.connection?.metadata?.readOnly === true
   const accountOnly = auth.connection?.accountOnly === true
-  const capabilities = auth.connection?.capabilities?.capabilities ?? []
+  const capabilities = capabilitiesOf(auth.connection)
   const canImport = capabilities.includes('data.import.csv')
   const canExport = capabilities.includes('data.export.csv')
 

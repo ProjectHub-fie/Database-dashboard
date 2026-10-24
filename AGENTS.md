@@ -60,6 +60,25 @@ implemented provider. Build commands:
   success.
 ## Gotchas found in practice
 
+- **`Set` never survives JSON — capability ids must be serialized explicitly.**
+  Providers declare `capabilities` as a `ReadonlySet<Capability>`;
+  `JSON.stringify(new Set([...]))` is `{}`, so any endpoint returning the raw
+  object gave the browser `capabilities: {}`, and `{}.includes(...)` threw
+  `includes is not a function` (Import/Export crashed on open). Always pass
+  capability objects through `serializeCapabilities()` (`providers/registry.ts`)
+  and read them client-side via `capabilitiesOf()` (`client/src/lib/capabilities.ts`).
+  `capabilities-wire.test.ts` pins the array contract at the wire level.
+- **API responses must send `Cache-Control: no-store`.** The CSRF cookie is
+  minted lazily by `anonymousSession`/`sessionMiddleware`. With default caching
+  (Express ETags + Vercel edge) a revalidated or `304` GET drops `Set-Cookie`,
+  leaving the browser without `dbh_csrf` and producing a phantom
+  `403 Invalid or missing CSRF token` on the first write. `index.ts` sets
+  `no-store` for all of `/api`.
+- **CSRF is a double submit; the client must bootstrap and retry.** The token
+  lives in a readable `dbh_csrf` cookie echoed as `x-csrf-token`. A write fired
+  before any API read, or after the backend restarted and lost its in-memory
+  anonymous store, sends a token the server cannot match. `client/src/lib/api.ts`
+  mints the cookie when absent and retries a CSRF 403 exactly once.
 - **`pg` does not decode `name[]` (oid 1003).** Catalog queries that aggregate
   `pg_attribute.attname` or `pg_class.relname` into arrays return raw literals
   (`{email}`) instead of `string[]`. Always cast those subqueries to `::text[]`

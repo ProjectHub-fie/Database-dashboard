@@ -6,6 +6,7 @@ import { actorId } from './middleware.js'
 import { redact } from '../lib/redact.js'
 import { verifyNeonConnectionUrl } from '../security/netlib.js'
 import { NeonProvider } from '../providers/neon/provider.js'
+import { serializeCapabilities } from '../providers/registry.js'
 import { readOnlyRoles } from '../security/roles.js'
 import { config } from '../config.js'
 
@@ -50,7 +51,7 @@ export function connectionsRouter(): Router {
       providerId: p.providerId,
       metadata: p.metadata,
       accountOnly: p.accountOnly,
-      capabilities: ctx.registry.capabilities(p.providerId),
+      capabilities: serializeCapabilities(ctx.registry.capabilities(p.providerId)),
     })
   })
 
@@ -122,7 +123,7 @@ export function connectionsRouter(): Router {
         ...(displayName ? { displayName } : {}),
       },
       accountOnly: false,
-      capabilities: ctx.registry.capabilities('neon'),
+      capabilities: serializeCapabilities(ctx.registry.capabilities('neon')),
     })
   })
 
@@ -179,7 +180,7 @@ export function connectionsRouter(): Router {
         ...(displayName ? { displayName } : {}),
       },
       accountOnly: true,
-      capabilities: ctx.registry.capabilities('neon'),
+      capabilities: serializeCapabilities(ctx.registry.capabilities('neon')),
       organizations: validation.organizations ?? [],
     })
   })
