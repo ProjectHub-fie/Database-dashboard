@@ -123,7 +123,10 @@ function returns `503 API_NOT_CONFIGURED` instead of falling through to HTML.
    rewrites only — check that `api/[...path].ts` is present in the deployed
    tree, that `API_ORIGIN` is set for the Production environment (not just
    Preview), and redeploy. A JSON `503 API_NOT_CONFIGURED` means the function
-   ran but the variable is missing.
+   ran but the variable is missing. A `508 INFINITE_LOOP_DETECTED` means
+   `API_ORIGIN` points at the Vercel domain itself; point it at the API host.
+   The handler now rejects that case up front as `503 API_ORIGIN_LOOP` so the
+   mistake shows one clear error instead of a loop.
 
    The sign-in screen keeps working when the proxy is misconfigured: the
    provider selector falls back to Neon (the one provider the server registers)

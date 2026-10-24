@@ -15,7 +15,7 @@ const argon2idOptions: argon2.HashOptions = {
   parallelism: 1,
 }
 
-export { SESSION_COOKIE, CSRF_COOKIE }
+export { SESSION_COOKIE, CSRF_COOKIE, argon2idOptions }
 
 export interface SessionAccount {
   session: Session
