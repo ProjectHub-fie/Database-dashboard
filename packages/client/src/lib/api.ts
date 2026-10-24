@@ -48,6 +48,31 @@ function ensureCsrfCookie(): Promise<void> {
   return csrfBootstrap
 }
 
+/**
+ * Fires when the server reports that the current connection no longer exists
+ * (``UNAUTHORIZED`` / "No active database session").
+ *
+ * A session can vanish without the browser doing anything wrong: it expired
+ * after the idle timeout, the backend restarted, or a failover sent the request
+ * to an instance that never held this session's pool. The UI must then leave
+ * whatever page it is on instead of showing stale "connected" chrome above
+ * panels that all fail with 401.
+ */
+type ConnectionLostHandler = () => void
+
+const connectionLostHandlers = new Set<ConnectionLostHandler>()
+
+export function onConnectionLost(handler: ConnectionLostHandler): () => void {
+  connectionLostHandlers.add(handler)
+  return () => {
+    connectionLostHandlers.delete(handler)
+  }
+}
+
+function notifyConnectionLost(): void {
+  for (const handler of connectionLostHandlers) handler()
+}
+
 export class ApiError extends Error {
   readonly code: string
   readonly status: number
@@ -121,6 +146,9 @@ async function doRequest<T>(path: string, opts: RequestOptions, csrfRetry = true
       if (csrfRetry && apiError.status === 403 && /csrf/i.test(apiError.message)) {
         await ensureCsrfCookie()
         return doRequest<T>(path, opts, false)
+      }
+      if (!path.startsWith('/api/auth/') && apiError.code === 'UNAUTHORIZED') {
+        notifyConnectionLost()
       }
       throw apiError
     }

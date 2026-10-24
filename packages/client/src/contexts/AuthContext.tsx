@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react'
-import { api, ApiError } from '../lib/api'
+import { api, ApiError, onConnectionLost } from '../lib/api'
 import { ConnectionStatus } from '../lib/types'
 
 export interface MeResponse {
@@ -41,6 +41,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setConnection({ connected: false })
     }
   }, [])
+
+  /**
+   * A session can disappear server-side (idle expiry, restart, or a failover to
+   * an instance that never held it). Drop the cached status so the shell stops
+   * rendering connection chrome, and the route guard sends the user back to the
+   * connect screen where they can authenticate again.
+   */
+  useEffect(() => onConnectionLost(() => setConnection({ connected: false })), [])
 
   useEffect(() => {
     let alive = true

@@ -82,6 +82,25 @@ function EntryRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+/**
+ * Dashboard routes need a live connection: every panel reads from the session's
+ * pool or API key. Without one they can only render error states, so send the
+ * visitor to the entry screen instead. Also covers a connection that is lost
+ * mid-session, since AuthContext clears `connected` when the server says so.
+ */
+function RequireConnection({ children }: { children: React.ReactNode }) {
+  const auth = useAuth()
+  if (auth.me === null || auth.connection === null) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <Spinner className="h-8 w-8" />
+      </div>
+    )
+  }
+  if (!auth.connection.connected) return <Navigate to="/connect" replace />
+  return <>{children}</>
+}
+
 export default function App() {
   return (
     <Routes>
@@ -106,24 +125,26 @@ export default function App() {
       <Route
         path="/*"
         element={
-          <Shell>
-            <Routes>
-              <Route path="/overview" element={<OverviewPage />} />
-              <Route path="/data" element={<DataBrowserPage />} />
-              <Route path="/sql" element={<SqlStudioPage />} />
-              <Route path="/schema" element={<SchemaManagerPage />} />
-              <Route path="/projects" element={<ProjectsPage />} />
-              <Route path="/branches" element={<BranchesPage />} />
-              <Route path="/databases" element={<DatabasesPage />} />
-              <Route path="/roles" element={<RolesPage />} />
-              <Route path="/operations" element={<OperationsPage />} />
-              <Route path="/monitoring" element={<MonitoringPage />} />
-              <Route path="/io" element={<ImportExportPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-              <Route path="/security" element={<SecurityPage />} />
-              <Route path="*" element={<Navigate to="/overview" replace />} />
-            </Routes>
-          </Shell>
+          <RequireConnection>
+            <Shell>
+              <Routes>
+                <Route path="/overview" element={<OverviewPage />} />
+                <Route path="/data" element={<DataBrowserPage />} />
+                <Route path="/sql" element={<SqlStudioPage />} />
+                <Route path="/schema" element={<SchemaManagerPage />} />
+                <Route path="/projects" element={<ProjectsPage />} />
+                <Route path="/branches" element={<BranchesPage />} />
+                <Route path="/databases" element={<DatabasesPage />} />
+                <Route path="/roles" element={<RolesPage />} />
+                <Route path="/operations" element={<OperationsPage />} />
+                <Route path="/monitoring" element={<MonitoringPage />} />
+                <Route path="/io" element={<ImportExportPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/security" element={<SecurityPage />} />
+                <Route path="*" element={<Navigate to="/overview" replace />} />
+              </Routes>
+            </Shell>
+          </RequireConnection>
         }
       />
     </Routes>
