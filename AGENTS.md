@@ -128,6 +128,28 @@ implemented provider. Build commands:
   at this same deployment. `deploy-config.test.ts` and
   `api/api-404-contract.test.ts` guard the wiring, and the client renders
   `ApiUnreachableBanner` when it sees a non-JSON `/api` response.
+- **On the Vercel edge, `req.headers['host']` / `x-forwarded-host` seen by the
+  function is often the *deployment* host (`<deploy>.vercel.app`), not the public
+  alias the browser used (`dbremote.vercel.app`).** So a naive self-reference
+  guard comparing origin host vs request host lets `API_ORIGIN`
+  pointing at the deployment look usable and silently proxies `/api/*` to the
+  SPA fallback (plain-text 404). The guard in `api/[...path].ts` now treats any
+  `*.vercel.app`/`*.now.sh`/`*.vercel.dev`/loopback origin as `API_ORIGIN_LOOP`
+  (503 JSON) regardless of request host — a serverless host can never be the
+  persistent API.
+- **The Vercel project env var doesn't always reach a fresh deploy's runtime.**
+  When this project's `API_ORIGIN` (added via CLI `env add`) kept behaving like
+  an old/stale value across `deploy --prod --force`, only a deploy with explicit
+  `--env API_ORIGIN=...` flags actually changed runtime behavior. Delete and
+  re-add the env var (or pass `--env` at deploy time) until `/api/healthz`
+  reflects the value; Vercel secrets can't be read back by the API (empty
+  `value` in `v9/projects/{id}/env`) so verify by behavior, not by inspection.
+- **`dbremote.vercel.app` is the Vercel SPA alias and cannot serve as
+  `API_ORIGIN`.** The stateful Express API (pg pools, SQLite, in-memory secrets)
+  runs on a persistent host; the `work-1/2` `all-hands.dev` tunnel hosts are
+  session-scoped and unreachable from Vercel (egress answers
+  `AMBIGUOUS_UPSTREAM`, not the API), so production `/api` only works when
+  `API_ORIGIN` points at a genuinely public persistent server.
 - **Routes are mounted in exactly one place: `src/api/routes.ts`.** Both
   `index.ts` and the test harness call `registerApiRoutes`. Do not re-add router
   wiring to either file — when they were duplicated the deployed app could serve
