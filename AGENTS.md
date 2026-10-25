@@ -118,6 +118,22 @@ implemented provider. Build commands:
   SQLite-backed and connection pools/secrets are in-memory. Keep the
   `/api/` exclusion in the SPA rewrite, otherwise API paths return `index.html`.
 
+- **A 404 from `/api` almost never means a missing route — check the deploy
+  first.** Every `/api` path must answer with the JSON envelope
+  `{ error: { code, message } }`; an HTML page means the request never reached
+  Express (the platform answered instead). Run
+  `scripts/check-deploy.sh <base-url>` to tell the two apart. The usual cause is
+  a Vercel project whose Root Directory is not the repo root, so
+  `api/[...path].ts` is never built; the second is `API_ORIGIN` unset or pointing
+  at this same deployment. `deploy-config.test.ts` and
+  `api/api-404-contract.test.ts` guard the wiring, and the client renders
+  `ApiUnreachableBanner` when it sees a non-JSON `/api` response.
+- **Routes are mounted in exactly one place: `src/api/routes.ts`.** Both
+  `index.ts` and the test harness call `registerApiRoutes`. Do not re-add router
+  wiring to either file — when they were duplicated the deployed app could serve
+  a route the tests never exercised, which is how a UI panel 404s in production
+  only. `api/client-routes.test.ts` fails if the client calls an unserved path.
+
 - **`UNAUTHORIZED` on a non-auth route means "session lost" to the client.**
   `lib/api.ts` turns any 401 into `onConnectionLost()`, which clears the
   connection and bounces the operator to `/connect`. Never use 401 to signal

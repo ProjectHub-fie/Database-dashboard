@@ -11,16 +11,9 @@ import { ProviderSessionManager } from '../security/provider-sessions.js'
 import { ProviderRegistryImpl } from '../providers/registry.js'
 import { NeonProvider } from '../providers/neon/provider.js'
 import { NeonHttpClient, NeonApiError } from '../providers/neon/client.js'
-import { installContext, sessionMiddleware, requireAuth, csrfProtection, errorHandler, anonymousSession } from '../api/middleware.js'
+import { installContext, errorHandler } from '../api/middleware.js'
 import { AnonymousSessionStore } from '../security/anon-session.js'
-import { authRouter } from '../api/auth-router.js'
-import { connectionsRouter } from '../api/connections-router.js'
-import { providersRouter } from '../api/providers-router.js'
-import { dataRouter } from '../api/data-router.js'
-import { sqlRouter } from '../api/sql-router.js'
-import { schemaRouter } from '../api/schema-router.js'
-import { controlPlaneRouter } from '../api/control-plane-router.js'
-import { auditRouter } from '../api/audit-router.js'
+import { registerApiRoutes } from '../api/routes.js'
 import { forwardAsyncErrors } from '../api/async-errors.js'
 import { requestLogMiddleware, recentRequests } from '../lib/request-log.js'
 
@@ -114,22 +107,7 @@ export async function makeTestApp(
   app.use(express.json({ limit: '1mb' }))
   app.use(requestLogMiddleware())
   app.get('/api/debug/requests', (_req, res) => res.json({ requests: recentRequests(100) }))
-  app.use('/api', sessionMiddleware())
-  app.use('/api', anonymousSession(anonSessions, opts.authRequired ?? true))
-  app.use('/api/auth', authRouter())
-  app.use('/api/providers', providersRouter())
-  app.use('/api', (req, res, next) => {
-    if (req.path === '/auth/login') return next()
-    if (!(opts.authRequired ?? true)) return next()
-    return requireAuth(req, res, next)
-  }, csrfProtection({ exempt: (req) => ['GET', 'HEAD', 'OPTIONS'].includes(req.method) }))
-  app.use('/api/connections', connectionsRouter())
-  app.use('/api/data', dataRouter())
-  app.use('/api/sql', sqlRouter())
-  app.use('/api/schema', schemaRouter())
-  app.use('/api/control', controlPlaneRouter())
-  app.use('/api/audit', auditRouter())
-  app.use('/healthz', (_req, res) => res.json({ ok: true }))
+  registerApiRoutes(app, { anonSessions, authRequired: opts.authRequired ?? true })
   app.use(errorHandler)
   forwardAsyncErrors(app)
   return { app, store, audit, auth, sessions, neon: neonHttp }
