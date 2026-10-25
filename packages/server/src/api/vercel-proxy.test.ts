@@ -76,6 +76,22 @@ describe('vercel api proxy', () => {
     expect(JSON.parse(body()).error.code).toBe('API_ORIGIN_LOOP')
   })
 
+  it('rejects a serverless origin even when it differs from the request host', async () => {
+    // On the Vercel edge the function sees the *deployment* host, not the public
+    // alias, so a self-referential origin would otherwise slip past the hostname
+    // comparison and silently proxy /api/* to the SPA fallback.
+    vi.stubEnv('API_ORIGIN', 'https://dbremote.vercel.app')
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    const handler = await loadHandler()
+    const { res, body } = makeRes()
+
+    await handler(makeReq({ host: 'database-1a2b3c4d-rajroy1313s-projects.vercel.app' }), res)
+
+    expect(res.statusCode).toBe(503)
+    expect(JSON.parse(body()).error.code).toBe('API_ORIGIN_LOOP')
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
   it('still proxies to a distinct upstream origin', async () => {
     vi.stubEnv('API_ORIGIN', 'https://api.example.com')
     const fetchSpy = vi
