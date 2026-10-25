@@ -93,6 +93,29 @@ export interface RequestOptions {
   timeoutMs?: number
 }
 
+/**
+ * Raise a diagnosable error when a non-JSON body comes back from `/api`.
+ *
+ * Two deployments of this app exist and they fail differently: a correct one
+ * answers every `/api` path with the JSON envelope, and a misconfigured one
+ * (usually a Vercel project whose Root Directory is not the repo root, so the
+ * `api/[...path]` proxy function is never built) answers with the platform's
+ * own HTML error page. The status alone cannot distinguish "route missing" from
+ * "render crash", so the message points at the deployment check that resolves it.
+ */
+function unreachableApiError(status: number, body: string): ApiError {
+  const looksLikeHtml = /^\s*</.test(body)
+  const detail = looksLikeHtml
+    ? 'The hosting platform answered this request instead of the API, so the API function is missing from this deployment.'
+    : 'The API returned a response this dashboard could not read.'
+  return new ApiError(status, {
+    error: {
+      code: 'API_UNREACHABLE',
+      message: `${detail} Check the deployment: /api must be served by the API function (on Vercel the project Root Directory has to be the repository root).`,
+    },
+  })
+}
+
 async function doRequest<T>(path: string, opts: RequestOptions, csrfRetry = true): Promise<T> {
   const { method = 'GET', query, body, timeoutMs = 60_000 } = opts
   let url = `${API_BASE}${path}`
@@ -139,6 +162,11 @@ async function doRequest<T>(path: string, opts: RequestOptions, csrfRetry = true
       data = null
     }
     if (!res.ok) {
+      // The API always answers with `{ error: { code, message } }`. A non-JSON
+      // body therefore means the request never reached Express: the hosting
+      // layer answered instead (a platform 404/502 page). Saying "Request
+      // failed (404)" here hides months of debugging, so name the real cause.
+      if (data === null) throw unreachableApiError(res.status, text)
       const apiError = new ApiError(res.status, (data as ApiErrorBody) ?? undefined)
       // Stale anonymous session (e.g. the backend restarted): re-mint the cookie
       // and retry the same request exactly once. Never retries blindly, so a

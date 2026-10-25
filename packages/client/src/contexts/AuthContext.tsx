@@ -23,6 +23,13 @@ interface AuthContextValue {
   /** True after a successful reauth within the TTL. */
   reauthedRecently: () => boolean
   busy: boolean
+  /**
+   * Set when `/api` answered with something other than the API's JSON envelope
+   * — in practice a platform error page, meaning this deployment never built
+   * the API function. Surfaced as a banner so the cause is visible instead of
+   * every panel failing with an opaque status.
+   */
+  apiUnreachable: boolean
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -32,13 +39,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [connection, setConnection] = useState<ConnectionStatus | null>(null)
   const [lastReauthAt, setLastReauthAt] = useState<number>(0)
   const [busy, setBusy] = useState(false)
+  const [apiUnreachable, setApiUnreachable] = useState(false)
 
   const reloadConnection = useCallback(async () => {
     try {
       const status = await api.get<ConnectionStatus>('/api/connections/status')
       setConnection(status)
-    } catch {
+      setApiUnreachable(false)
+    } catch (err) {
       setConnection({ connected: false })
+      if (err instanceof ApiError && err.code === 'API_UNREACHABLE') setApiUnreachable(true)
     }
   }, [])
 
@@ -57,8 +67,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const m = await api.get<MeResponse>('/api/auth/me')
         if (!alive) return
         setMe(m)
-      } catch {
-        if (alive) setMe({ authenticated: false })
+      } catch (err) {
+        if (!alive) return
+        setMe({ authenticated: false })
+        if (err instanceof ApiError && err.code === 'API_UNREACHABLE') setApiUnreachable(true)
       }
       if (alive) void reloadConnection()
     }
@@ -125,7 +137,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [lastReauthAt])
 
   return (
-    <AuthContext.Provider value={{ me, connection, reloadConnection, login, logout, reauth, changePassword, reauthedRecently, busy }}>
+    <AuthContext.Provider
+      value={{
+        me,
+        connection,
+        reloadConnection,
+        login,
+        logout,
+        reauth,
+        changePassword,
+        reauthedRecently,
+        busy,
+        apiUnreachable,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   )
