@@ -112,15 +112,44 @@ describe('Anonymous connection mode (auth temporarily optional)', () => {
     expect([200, 404]).toContain(res.status)
   })
 
-  it('keeps saved queries account-only under anonymous mode', async () => {
+  /**
+   * Account-only routes must not answer 401 to a visitor whose anonymous
+   * session is perfectly valid.
+   *
+   * `lib/api.ts` treats any 401 from a non-auth route as "the connection
+   * disappeared" and clears it, so the shell bounces to /connect. Opening SQL
+   * Studio fetches `/api/sql/saved` on mount and the Security page fetches
+   * `/api/audit`; a 401 there logged the operator out just for tapping the
+   * page. 403 FEATURE_UNAVAILABLE says "this feature needs an account" without
+   * claiming the session is gone.
+   */
+  it('keeps saved queries account-only without reporting a lost session', async () => {
     const res = await anon.get('/api/sql/saved')
-    expect(res.status).toBe(401)
-    expect(res.body.error.code).toBe('UNAUTHORIZED')
+    expect(res.status).toBe(403)
+    expect(res.body.error.code).toBe('FEATURE_UNAVAILABLE')
   })
 
-  it('keeps audit history account-only under anonymous mode', async () => {
+  it('keeps audit history account-only without reporting a lost session', async () => {
     const res = await anon.get('/api/audit')
-    expect(res.status).toBe(401)
+    expect(res.status).toBe(403)
+    expect(res.body.error.code).toBe('FEATURE_UNAVAILABLE')
+  })
+
+  it('never answers 401 on a page-load request from a live anonymous session', async () => {
+    // The requests the dashboard fires when an operator taps a sidebar entry.
+    const pageLoadRequests = [
+      '/api/sql/history',
+      '/api/sql/saved',
+      '/api/audit',
+      '/api/connections/status',
+      '/api/capabilities',
+      '/api/providers',
+    ]
+    for (const path of pageLoadRequests) {
+      const res = await anon.get(path)
+      expect({ path, status: res.status }).not.toEqual({ path, status: 401 })
+      if (res.status === 403) expect(res.body.error.code).toBe('FEATURE_UNAVAILABLE')
+    }
   })
 
   it('does not leak the anon ref into API responses', async () => {
