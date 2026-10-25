@@ -53,6 +53,7 @@ export function SqlStudioPage() {
   const [transactionState, setTransactionState] = useState<string | null>(null)
   const [history, setHistory] = useState<QueryHistoryEntry[]>([])
   const [saved, setSaved] = useState<SavedQuery[]>([])
+  const [savedNeedsAccount, setSavedNeedsAccount] = useState(false)
   const [showSaved, setShowSaved] = useState(false)
   const [saveOpen, setSaveOpen] = useState(false)
   const [saveName, setSaveName] = useState('')
@@ -75,7 +76,14 @@ export function SqlStudioPage() {
   }, [])
 
   useEffect(() => {
-    void api.get<{ saved: SavedQuery[] }>('/api/sql/saved').then((r) => setSaved(r.saved)).catch(() => undefined)
+    void api
+      .get<{ saved: SavedQuery[] }>('/api/sql/saved')
+      .then((r) => setSaved(r.saved))
+      .catch((err) => {
+        // Saved queries are per-account rows; an anonymous connection can run
+        // SQL but cannot own them. Say so instead of showing an empty list.
+        if (err instanceof ApiError && err.code === 'FEATURE_UNAVAILABLE') setSavedNeedsAccount(true)
+      })
   }, [])
 
   function newTab() {
@@ -318,7 +326,13 @@ export function SqlStudioPage() {
                 </Button>
               </div>
               <div className="ml-auto flex items-center gap-1">
-                <Button size="sm" variant="ghost" onClick={() => setSaveOpen(true)}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setSaveOpen(true)}
+                  disabled={savedNeedsAccount}
+                  title={savedNeedsAccount ? 'Saving queries needs a dashboard account' : 'Save query'}
+                >
                   <Save className="h-3.5 w-3.5" />
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => setShowSaved((s) => !s)}>
@@ -339,7 +353,12 @@ export function SqlStudioPage() {
             {showSaved && (
               <Card className="p-3">
                 <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Saved queries</h3>
-                {saved.length === 0 ? (
+                {savedNeedsAccount ? (
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    Saved queries need a dashboard account. This anonymous connection can run SQL, but it cannot store
+                    queries.
+                  </p>
+                ) : saved.length === 0 ? (
                   <p className="text-sm text-slate-400">No saved queries yet.</p>
                 ) : (
                   <div className="space-y-1">

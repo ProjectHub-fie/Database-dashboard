@@ -119,12 +119,30 @@ export function actorId(res: Response): number | null {
  * Routes that own per-user rows (saved queries, audit history) cannot serve an
  * anonymous caller — there is no user to own the row. Kept as a guard rather
  * than a route-level delete so enabling auth restores the behaviour exactly.
+ *
+ * The status code depends on the mode, because the browser reads 401 as "my
+ * session disappeared": `lib/api.ts` clears the connection on any 401 from a
+ * non-auth route and the shell bounces to /connect. Under `AUTH_REQUIRED=true`
+ * that is the right answer (the caller really is unauthenticated). Under
+ * `AUTH_REQUIRED=false` the anonymous session is valid and only the *feature*
+ * is unavailable, so answering 401 signed the operator out for tapping SQL
+ * Studio or Security. Use 403 there.
  */
 export function requireUser(_req: Request, res: Response, next: NextFunction): void {
   if (!res.locals.userId) {
-    res.status(401).json({
+    const authRequired = (res.locals.authRequired as boolean | undefined) ?? config.authRequired
+    if (authRequired) {
+      res.status(401).json({
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'This feature needs a dashboard account. Sign in to use saved queries and audit history.',
+        },
+      })
+      return
+    }
+    res.status(403).json({
       error: {
-        code: 'UNAUTHORIZED',
+        code: 'FEATURE_UNAVAILABLE',
         message: 'This feature needs a dashboard account. Sign in to use saved queries and audit history.',
       },
     })

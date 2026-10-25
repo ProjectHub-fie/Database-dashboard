@@ -142,6 +142,14 @@ implemented provider. Build commands:
   API-key sessions log themselves out on the first click of any data page.
   Nav sections that need a live SQL connection carry `needsDatabase` so they are
   hidden, not offered-and-failing, in API-key mode.
+- **Account-only routes answer 403 under anonymous mode, not 401.** `requireUser`
+  guards saved queries (`/api/sql/saved`) and audit history (`/api/audit`), which
+  an anonymous connection can reach but cannot own. Answering 401 there reads as
+  "session lost" to `lib/api.ts`, so opening SQL Studio (which fetches
+  `/api/sql/saved` on mount) signed the operator out just for tapping the page.
+  The guard now returns `FEATURE_UNAVAILABLE` (403) when `AUTH_REQUIRED=false`
+  and keeps 401 only when auth is enforced. `anonymous-mode.test.ts` pins it,
+  and `client/src/lib/api.test.ts` pins the client half of the contract.
 - **`dbh_csrf` must be re-issued, not only minted.** `anonymousSession` writes
   the cookie when the browser does not already hold the token derived from its
   session ref. Setting it only on `isNew` broke sign-out → sign-in: logout

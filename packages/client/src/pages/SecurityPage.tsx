@@ -21,6 +21,7 @@ export function SecurityPage() {
   const { toast } = useToast()
   const [audit, setAudit] = useState<AuditEvent[]>([])
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [auditNeedsAccount, setAuditNeedsAccount] = useState(false)
   const [filter, setFilter] = useState('')
 
   const c = auth.connection
@@ -33,6 +34,13 @@ export function SecurityPage() {
         setState('ready')
       })
       .catch((err) => {
+        // Audit rows are owned by a dashboard account; an anonymous connection
+        // reaches the route but cannot own them (403, never 401).
+        if (err instanceof ApiError && err.code === 'FEATURE_UNAVAILABLE') {
+          setAuditNeedsAccount(true)
+          setState('ready')
+          return
+        }
         if (err instanceof ApiError && (err.code === 'NOT_FOUND' || err.code === 'FORBIDDEN' || err.code === 'UNAUTHORIZED')) {
           setState('ready') // audit endpoint may not be exposed
         } else setState('error')
@@ -99,7 +107,13 @@ export function SecurityPage() {
         </div>
         {state === 'loading' && <Skeleton className="h-32 w-full" />}
         {state === 'ready' && (
-          hasAuditRoute ? (
+          auditNeedsAccount ? (
+            <EmptyState
+              icon={<BookOpen className="h-8 w-8" />}
+              title="Audit history needs a dashboard account"
+              description="This anonymous connection can use the dashboard, but audit rows belong to an account. Sign in with a dashboard account to review your events."
+            />
+          ) : hasAuditRoute ? (
             <div className="max-h-[28rem] overflow-auto">
               <table className="w-full text-left text-xs">
                 <thead className="sticky top-0 bg-slate-50 dark:bg-slate-900">
