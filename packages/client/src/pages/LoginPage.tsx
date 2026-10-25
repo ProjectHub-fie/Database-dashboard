@@ -8,6 +8,7 @@ import { api, ApiError } from '../lib/api'
 import { ConnectionStatus, ProviderCatalogEntry } from '../lib/types'
 import { resolveCatalog, supportsAuthMethod, catalogIssueMessage } from '../lib/provider-catalog'
 import { Footer } from '../components/Footer'
+import { ApiUnreachableBanner } from '../components/ApiUnreachableBanner'
 import { GoToTop } from '../components/GoToTop'
 import {
   Database,
@@ -301,6 +302,7 @@ export function LoginPage() {
       </header>
 
       <main id="app-scroll" className="mx-auto w-full max-w-6xl flex-1 px-6 pb-16 pt-12 sm:pt-16">
+        <ApiUnreachableBanner />
         <div className="mx-auto max-w-3xl text-center">
           <h1 className="text-balance text-[32px] font-extrabold leading-[1.06] tracking-[-0.035em] text-slate-900 sm:text-[44px] dark:text-white">
             {signedIn ? 'Connect a database' : authRequired ? 'Sign in to DB Horizon' : 'Connect a database'}

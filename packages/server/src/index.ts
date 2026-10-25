@@ -12,16 +12,9 @@ import { AuditService } from './security/audit.js'
 import { ProviderSessionManager } from './security/provider-sessions.js'
 import { ProviderRegistryImpl } from './providers/registry.js'
 import { NeonProvider } from './providers/neon/provider.js'
-import { installContext, sessionMiddleware, requireAuth, csrfProtection, errorHandler, anonymousSession } from './api/middleware.js'
-import { authRouter } from './api/auth-router.js'
-import { connectionsRouter } from './api/connections-router.js'
+import { installContext, errorHandler } from './api/middleware.js'
+import { registerApiRoutes } from './api/routes.js'
 import { AnonymousSessionStore } from './security/anon-session.js'
-import { providersRouter } from './api/providers-router.js'
-import { dataRouter } from './api/data-router.js'
-import { sqlRouter } from './api/sql-router.js'
-import { schemaRouter } from './api/schema-router.js'
-import { controlPlaneRouter } from './api/control-plane-router.js'
-import { auditRouter } from './api/audit-router.js'
 import { forwardAsyncErrors } from './api/async-errors.js'
 import { requestLogMiddleware, recentRequests } from './lib/request-log.js'
 
@@ -132,40 +125,9 @@ export async function createApp(): Promise<{
     }),
   )
 
-  // Auth: session resolution for every API route; login is public but
-  // rate-limited. Every other API route requires an authenticated dashboard
-  // session + CSRF token for state-changing requests.
-  app.use('/api', sessionMiddleware())
-  // When auth is disabled, every browser still gets an isolated session ref so
-  // provider credentials stay per-visitor instead of becoming process-global.
-  app.use('/api', anonymousSession(anonSessions))
-  app.use('/api/auth', authRouter())
-  // Public catalog: describes which providers exist and which auth methods they
-  // implement. Contains no secrets, and the login screen needs it before sign-in
-  // so the provider selector is driven by the registry instead of a UI table.
-  app.use('/api/providers', providersRouter())
-  app.use(
-    '/api',
-    (req, res, next) => {
-      // Login is deliberately public (it creates the session).
-      if (req.path === '/auth/login') return next()
-      // Authentication is temporarily optional: the check is intact, the flag
-      // only decides whether it runs. Set AUTH_REQUIRED=true to enforce it.
-      if (!config.authRequired) return next()
-      return requireAuth(req, res, next)
-    },
-    csrfProtection({ exempt: (req) => ['GET', 'HEAD', 'OPTIONS'].includes(req.method) }),
-  )
-
-  app.use('/api/connections', connectionsRouter())
-  app.use('/api/data', dataRouter())
-  app.use('/api/sql', sqlRouter())
-  app.use('/api/schema', schemaRouter())
-  app.use('/api/control', controlPlaneRouter())
-  app.use('/api/audit', auditRouter())
-
-  // Health probe used by orchestrators (no auth).
-  app.get('/healthz', (_req, res) => res.json({ ok: true }))
+  // Every /api route, mounted in one shared place so the deployed server and
+  // the test harness cannot drift apart.
+  registerApiRoutes(app, { anonSessions, authRequired: config.authRequired })
 
   // Serve built frontend in production.
   const dist = path.resolve(__dirname, '../../client/dist')
