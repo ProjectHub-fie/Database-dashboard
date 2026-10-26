@@ -1,5 +1,5 @@
 {
-  "name": "db-horizon",
+  "name": "db-remote",
   "version": "0.1.0",
   "private": true,
   "description": "Multi-provider remote database management dashboard. Neon PostgreSQL is the first implemented provider.",

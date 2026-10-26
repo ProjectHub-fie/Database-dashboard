@@ -1,6 +1,6 @@
 # Security architecture
 
-This document describes the security model of DB Horizon. It is written for
+This document describes the security model of DB Remote. It is written for
 operators and reviewers. Everything here is enforced by the server; the browser
 is treated as untrusted.
 

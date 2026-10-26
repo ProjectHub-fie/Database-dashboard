@@ -1,5 +1,5 @@
 /**
- * Multi-provider contract for DB Horizon.
+ * Multi-provider contract for DB Remote.
  *
  * Each provider is composed of (at most) two adapters:
  *   - a *database engine* adapter (PostgreSQL, MySQL, ...) that executes SQL
@@ -446,6 +446,24 @@ export interface QuerySession {
     table: string,
     opts: { offset: number; limit: number; orderBy?: string; orderDir?: string; search?: string },
   ): Promise<RowPage>
+  /**
+   * Every matching row of a table, for a file export. The row cap is decided by
+   * the server, never by the caller's query string.
+   */
+  exportTableRows(input: {
+    schema: string
+    table: string
+    maxRows: number
+    orderBy?: string
+    orderDir?: 'asc' | 'desc'
+    search?: string
+  }): Promise<{
+    columns: string[]
+    rows: AsyncIterable<Record<string, unknown>>
+    truncated: boolean
+    rowCount: number
+    maxRows: number
+  }>
   insertRow(input: { schema: string; table: string; row: Record<string, unknown>; maxRows?: number }): Promise<QueryResult>
   updateRow(input: {
     schema: string

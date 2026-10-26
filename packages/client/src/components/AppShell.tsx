@@ -114,7 +114,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Database className="h-4 w-4" />
             </span>
             <div className="min-w-0 leading-tight">
-              <p className="truncate text-[13px] font-semibold tracking-tight text-slate-900 dark:text-white">DB Horizon</p>
+              <p className="truncate text-[13px] font-semibold tracking-tight text-slate-900 dark:text-white">DB Remote</p>
               <p className="truncate text-[10px] text-slate-500 dark:text-slate-400">Database Management</p>
             </div>
           </div>

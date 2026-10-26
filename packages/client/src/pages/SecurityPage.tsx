@@ -86,7 +86,7 @@ export function SecurityPage() {
           <AlertTriangle className="h-4 w-4 text-amber-500" /> Understand the limits of dashboard security
         </h2>
         <p className="text-sm text-slate-600 dark:text-slate-300">
-          DB Horizon protects the <em>dashboard session</em> and the server-side connection. If a PostgreSQL connection URL or Neon API key is leaked, anyone holding it can connect to your resources directly — no dashboard that only checks its own sessions can prevent that. Treat connection strings and API keys as secrets: rotate them when they may have leaked, scope API keys to specific projects, and revoke leaked keys immediately at the provider.
+          DB Remote protects the <em>dashboard session</em> and the server-side connection. If a PostgreSQL connection URL or Neon API key is leaked, anyone holding it can connect to your resources directly — no dashboard that only checks its own sessions can prevent that. Treat connection strings and API keys as secrets: rotate them when they may have leaked, scope API keys to specific projects, and revoke leaked keys immediately at the provider.
         </p>
       </Card>
 

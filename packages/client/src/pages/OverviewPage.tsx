@@ -3,6 +3,8 @@ import { useAuth } from '../contexts/AuthContext'
 import { api, ApiError } from '../lib/api'
 import { DatabaseStats } from '../lib/types'
 import { Card, Skeleton, Badge, Button, EmptyState } from '../components/ui'
+import { SkeletonList } from '../components/loaders/Skeletons'
+import { InlineLoader } from '../components/loaders/PageLoader'
 import {
   Activity,
   Database,
@@ -35,9 +37,15 @@ export function OverviewPage() {
   const accountOnly = c?.accountOnly === true
   const [stats, setStats] = useState<DatabaseStats | null>(null)
   const [latency, setLatency] = useState<{ ms: number; version: string } | null>(null)
-  const [statsLoading, setStatsLoading] = useState(false)
+  // The stats request fires on mount, so starting `false` rendered a card full
+  // of em dashes for one paint before flipping to the skeleton.
+  const [statsLoading, setStatsLoading] = useState(!accountOnly)
   const [statsError, setStatsError] = useState<string | null>(null)
+  // Auto-refresh every 30s must not blank the panels it re-fetches, so the
+  // skeleton is only for the initial load (no data yet).
+  const [loadedOnce, setLoadedOnce] = useState(false)
   const [history, setHistory] = useState<Array<{ id: string; sql: string; durationMs: number; rowCount: number | null; error: string | null; createdAt: number }>>([])
+  const [historyLoading, setHistoryLoading] = useState(!accountOnly)
 
   const load = useCallback(async () => {
     setStatsLoading(true)
@@ -60,6 +68,7 @@ export function OverviewPage() {
       setStatsError(err instanceof ApiError ? err.message : 'Could not load database stats')
     } finally {
       setStatsLoading(false)
+      setLoadedOnce(true)
     }
   }, [])
 
@@ -79,12 +88,13 @@ export function OverviewPage() {
       )
       .then((res) => setHistory(res.history))
       .catch(() => undefined)
+      .finally(() => setHistoryLoading(false))
   }, [accountOnly])
 
   if (accountOnly) {
     return (
       <div className="mx-auto max-w-4xl space-y-6">
-        <Header />
+        <Header refreshing={false} />
         <Card className="p-6">
           <div className="flex flex-col items-start gap-3">
             <div className="flex items-center gap-2">
@@ -105,13 +115,13 @@ export function OverviewPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <Header />
+      <Header refreshing={statsLoading && loadedOnce} />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Connection latency" value={latency ? `${latency.ms} ms` : null} icon={<Timer className="h-4 w-4" />} loading={statsLoading && !latency} />
-        <StatCard label="Database size" value={stats ? formatBytes(stats.sizeBytes) : null} icon={<Database className="h-4 w-4" />} loading={statsLoading} />
-        <StatCard label="Tables / schemas" value={stats ? `${stats.tableCount} / ${stats.schemaCount}` : null} icon={<Table2 className="h-4 w-4" />} loading={statsLoading} />
-        <StatCard label="Indexes" value={stats ? String(stats.indexCount) : null} icon={<Boxes className="h-4 w-4" />} loading={statsLoading} />
+        <StatCard label="Connection latency" value={latency ? `${latency.ms} ms` : null} icon={<Timer className="h-4 w-4" />} loading={statsLoading && !loadedOnce} />
+        <StatCard label="Database size" value={stats ? formatBytes(stats.sizeBytes) : null} icon={<Database className="h-4 w-4" />} loading={statsLoading && !loadedOnce} />
+        <StatCard label="Tables / schemas" value={stats ? `${stats.tableCount} / ${stats.schemaCount}` : null} icon={<Table2 className="h-4 w-4" />} loading={statsLoading && !loadedOnce} />
+        <StatCard label="Indexes" value={stats ? String(stats.indexCount) : null} icon={<Boxes className="h-4 w-4" />} loading={statsLoading && !loadedOnce} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -122,8 +132,8 @@ export function OverviewPage() {
             </h2>
             <span className="text-xs text-slate-400">{stats ? stats.connectionCount : '—'} total</span>
           </div>
-          {statsLoading ? (
-            <Skeleton className="h-40 w-full" />
+          {statsLoading && !loadedOnce ? (
+            <SkeletonList rows={3} />
           ) : statsError ? (
             <PermissionNote text={statsError} />
           ) : stats && stats.activeConnections.length > 0 ? (
@@ -149,7 +159,9 @@ export function OverviewPage() {
             </h2>
             <span className="text-xs text-slate-400">{history.length === 0 ? 'no history yet' : `${history.length} in session`}</span>
           </div>
-          {history.length === 0 ? (
+          {historyLoading ? (
+            <SkeletonList rows={4} />
+          ) : history.length === 0 ? (
             <EmptyState icon={<Timer className="h-8 w-8" />} title="No queries in this session" description="Run a query in SQL Studio and it will show up here with its execution time." />
           ) : (
             <div className="max-h-56 space-y-2 overflow-y-auto">
@@ -176,7 +188,7 @@ export function OverviewPage() {
   )
 }
 
-function Header() {
+function Header({ refreshing }: { refreshing: boolean }) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
@@ -185,15 +197,26 @@ function Header() {
           Connection status and live database health for the currently selected resource.
         </p>
       </div>
-      <RefreshSoon />
+      <RefreshSoon refreshing={refreshing} />
     </div>
   )
 }
 
-function RefreshSoon() {
+function RefreshSoon({ refreshing }: { refreshing: boolean }) {
+  // Background refresh is silent by design: the numbers stay on screen and a
+  // small spinner says "re-checking", instead of the panels blinking.
   return (
-    <div className="flex items-center gap-2 text-xs text-slate-400">
-      <RefreshCw className="h-3.5 w-3.5" /> auto-refresh 30s
+    <div className="flex items-center gap-2 text-xs text-slate-400" aria-live="polite">
+      {refreshing ? (
+        <>
+          <InlineLoader label="Refreshing database health" />
+          <span>refreshing…</span>
+        </>
+      ) : (
+        <>
+          <RefreshCw className="h-3.5 w-3.5" /> auto-refresh 30s
+        </>
+      )}
     </div>
   )
 }

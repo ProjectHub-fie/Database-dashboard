@@ -28,8 +28,9 @@ TRUST_PROXY=true       # only when behind a TLS-terminating proxy
 ```
 
 If you use a file-backed store, configure a persistent `dataDir` (the server
-stores users/sessions/audit in `packages/server/data/db-horizon.sqlite` by
-default).
+stores users/sessions/audit in `packages/server/data/db-remote.sqlite` by
+default). A deployment upgraded from the previous name keeps using its existing
+`db-horizon.sqlite` file instead of starting an empty store.
 
 ### 3. Run behind TLS
 
@@ -83,12 +84,12 @@ the request comes over HTTPS).
 3. Remove `ADMIN_INITIAL_PASSWORD` from the server environment and restart so the
    bootstrap value no longer exists anywhere.
 4. If the password may have leaked and you cannot sign in, delete the account row
-   from the dashboard store (`$DATA_DIR/db-horizon.sqlite`) and restart with a
+   from the dashboard store (`$DATA_DIR/db-remote.sqlite`) and restart with a
    fresh `ADMIN_INITIAL_PASSWORD`:
 
    ```bash
    node -e "const{DatabaseSync}=require('node:sqlite');
-   const db=new DatabaseSync(process.env.DATA_DIR+'/db-horizon.sqlite');
+   const db=new DatabaseSync(process.env.DATA_DIR+'/db-remote.sqlite');
    db.exec('PRAGMA foreign_keys = ON');
    db.prepare('DELETE FROM users WHERE username=?').run('admin');"
    ```

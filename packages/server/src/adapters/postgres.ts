@@ -104,13 +104,13 @@ export class PostgresAdapter implements DatabaseAdapter<PgConn> {
     let sql = input.sql
 
     let truncated = false
+    // A script is a single statement only when no semicolon separates another
+    // one. `LIMIT` cannot be appended to a multi-statement string.
+    const isSingleStatement = !/;[\s\S]*\S/.test(sql)
     // Enforce a row cap on the server for SELECT-shaped statements.
     const isRowReturning = /^\s*(?:\/\*[\s\S]*?\*\/\s*)*(?:select|with|show|explain|describe|values|table)\b/i.test(sql)
-    if (isRowReturning) {
-      const wrapped = `${sql.trim().replace(/;+\s*$/, '')} LIMIT ${maxRows + 1}`
-      if (wrapped !== `${input.sql.trim().replace(/;+\s*$/, '')}`) {
-        sql = wrapped
-      }
+    if (isRowReturning && isSingleStatement) {
+      sql = `${sql.trim().replace(/;+\s*$/, '')} LIMIT ${maxRows + 1}`
     }
 
     let result
@@ -119,10 +119,13 @@ export class PostgresAdapter implements DatabaseAdapter<PgConn> {
       // not just the node driver. The value comes from the backend, never the
       // client.
       await conn.client.query(`SET statement_timeout = ${Math.max(1, timeoutMs)}`)
-      result = await conn.client.query({
-        text: sql,
-        values: input.params ? [...input.params] : [],
-      })
+      const params = input.params ? [...input.params] : []
+      // `pg` rejects multi-statement text on the extended (prepared) protocol
+      // with "cannot insert multiple commands into a prepared statement". With
+      // no parameters the simple protocol handles a script and returns the
+      // result of its last statement, which is what SQL Studio shows. Nothing
+      // user-supplied is interpolated here: parameters stay parameterized.
+      result = await conn.client.query(params.length ? { text: sql, values: params } : { text: sql })
     } catch (err) {
       throw this.translatePgError(err)
     } finally {
@@ -248,6 +251,34 @@ export class PostgresAdapter implements DatabaseAdapter<PgConn> {
   ): Promise<RowPage> {
     const client = conn.client
     const table = quoteQualified(input.schema, input.table)
+    const { where, params } = await this.buildRowFilter(client, input)
+    const orderByClause = this.orderByClause(input.orderBy, input.orderDir)
+    const countParams = [...params]
+    const totalQuery = `SELECT COUNT(*)::bigint AS total FROM ${table}${where}`
+    const total = (await client.query(totalQuery, countParams)).rows[0] as { total: number }
+
+    const rowParams = [...params, input.limit, input.offset]
+    const rowsSql = `SELECT * FROM ${table}${where}${orderByClause} LIMIT $${rowParams.length - 1}::int OFFSET $${rowParams.length}::int`
+    const res = await client.query({ text: rowsSql, values: rowParams })
+    return {
+      columns: res.fields.map((f) => f.name),
+      rows: res.rows as Array<Record<string, unknown>>,
+      total: total.total,
+      truncated: res.rows.length >= input.limit,
+      offset: input.offset,
+    }
+  }
+
+  /** Build the WHERE clause for row browsing/export. Values are always
+   *  parameterized; identifiers come from the catalog or the validated input. */
+  private async buildRowFilter(
+    client: pg.Client,
+    input: {
+      schema: string
+      table: string
+      filters?: Array<{ column: string; op: string; value: unknown }>
+    },
+  ): Promise<{ where: string; params: unknown[] }> {
     const whereSql: string[] = []
     const params: unknown[] = []
 
@@ -311,26 +342,55 @@ export class PostgresAdapter implements DatabaseAdapter<PgConn> {
       }
     }
 
-    const orderByClause =
-      input.orderBy && /^[a-zA-Z_][a-zA-Z0-9_$]{0,62}$/.test(input.orderBy)
-        ? ` ORDER BY ${this.quoteColumn(input.orderBy)} ${input.orderDir === 'desc' ? 'DESC' : 'ASC'} NULLS LAST`
-        : ''
+    return { where: whereSql.length > 0 ? ` WHERE ${whereSql.join(' AND ')}` : '', params }
+  }
 
-    const where = whereSql.length > 0 ? ` WHERE ${whereSql.join(' AND ')}` : ''
-    const countParams = [...params]
-    const totalQuery = `SELECT COUNT(*)::bigint AS total FROM ${table}${where}`
-    const total = (await client.query(totalQuery, countParams)).rows[0] as { total: number }
+  /**
+   * Stream every matching row of a table for export.
+   *
+   * Shares the filter and ordering construction with `readRows`, so an export
+   * always matches what the operator was looking at — same quoted identifiers,
+   * same parameterized search, same NULLS LAST ordering. `maxRows` is a hard
+   * server-side cap; the caller cannot raise it through the query string.
+   */
+  async exportTableRows(
+    conn: PgConn,
+    input: {
+      schema: string
+      table: string
+      maxRows: number
+      orderBy?: string
+      orderDir?: 'asc' | 'desc'
+      filters?: Array<{ column: string; op: string; value: unknown }>
+    },
+  ): Promise<{ columns: string[]; rows: AsyncIterable<Record<string, unknown>>; truncated: boolean; rowCount: number }> {
+    const client = conn.client
+    const table = quoteQualified(input.schema, input.table)
+    const { where, params } = await this.buildRowFilter(client, input)
+    const orderByClause = this.orderByClause(input.orderBy, input.orderDir)
+    // Fetch one past the cap purely to report `truncated` honestly.
+    const limitParams = [...params, input.maxRows + 1]
+    const sql = `SELECT * FROM ${table}${where}${orderByClause} LIMIT $${limitParams.length}::int`
 
-    const rowParams = [...params, input.limit, input.offset]
-    const rowsSql = `SELECT * FROM ${table}${where}${orderByClause} LIMIT $${rowParams.length - 1}::int OFFSET $${rowParams.length}::int`
-    const res = await client.query({ text: rowsSql, values: rowParams })
+    const res = await client.query({ text: sql, values: limitParams })
+    const fields = res.fields.map((f) => f.name)
+    const raw = res.rows as Array<Record<string, unknown>>
+    const truncated = raw.length > input.maxRows
+    const rows = truncated ? raw.slice(0, input.maxRows) : raw
+
     return {
-      columns: res.fields.map((f) => f.name),
-      rows: res.rows as Array<Record<string, unknown>>,
-      total: total.total,
-      truncated: res.rows.length >= input.limit,
-      offset: input.offset,
+      columns: fields,
+      rows: (async function* () {
+        for (const row of rows) yield row
+      })(),
+      truncated,
+      rowCount: rows.length,
     }
+  }
+
+  private orderByClause(orderBy?: string, orderDir?: 'asc' | 'desc'): string {
+    if (!orderBy || !/^[a-zA-Z_][a-zA-Z0-9_$]{0,62}$/.test(orderBy)) return ''
+    return ` ORDER BY ${this.quoteColumn(orderBy)} ${orderDir === 'desc' ? 'DESC' : 'ASC'} NULLS LAST`
   }
 
   async insertRow(
@@ -922,9 +982,12 @@ export class PostgresAdapter implements DatabaseAdapter<PgConn> {
             detail: message,
           })
         }
+        // A driver-side error carries no pg severity and no SQLSTATE, but its
+        // message is the only explanation the operator can act on (a refused
+        // prepared statement, a protocol violation). Keep it, redacted.
         return new AppError({
           code: 'QUERY_ERROR',
-          message: 'Database query failed',
+          message: safePgMessage(message) || 'Database query failed',
           detail: message,
         })
       }
@@ -977,13 +1040,13 @@ export function buildPgClient(opts: {
   applicationName?: string
   statementTimeoutMs?: number
 }): pg.Client {
-  return new Client({
+  const client = new Client({
     host: opts.host,
     port: opts.port,
     database: opts.database,
     user: opts.role,
     password: opts.password,
-    application_name: opts.applicationName ?? 'db-horizon',
+    application_name: opts.applicationName ?? 'db-remote',
     connectionTimeoutMillis: opts.connectionTimeoutMs ?? 10_000,
     statement_timeout: opts.statementTimeoutMs ?? STATEMENT_TIMEOUT_MS,
     ssl: {
@@ -992,6 +1055,13 @@ export function buildPgClient(opts: {
     },
     stream: () => createPinnedSocket(opts.pinnedAddress),
   })
+  // A dead or reset PostgreSQL socket makes pg emit an `error` event on the
+  // Client. Without a listener that event is an unhandled exception and kills
+  // the whole API process, taking the live connection down with it. The
+  // failure is already surfaced to callers through the pending query's
+  // rejection, so this handler only prevents a process crash.
+  client.on('error', () => undefined)
+  return client
 }
 
 /**

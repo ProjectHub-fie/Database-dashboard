@@ -447,7 +447,7 @@ async function providerConnectWithUrl(
     role: opts.role,
     password: opts.password,
     pinnedAddress: opts.pinnedAddress,
-    applicationName: 'db-horizon',
+    applicationName: 'db-remote',
   })
   try {
     await client.connect()
@@ -473,7 +473,7 @@ async function providerConnectWithUrl(
         ssl: { rejectUnauthorized: true, servername: opts.host },
         stream: streamFactory,
         connectionTimeoutMillis: 10_000,
-        applicationName: 'db-horizon',
+        applicationName: 'db-remote',
       },
     },
     metadata: {

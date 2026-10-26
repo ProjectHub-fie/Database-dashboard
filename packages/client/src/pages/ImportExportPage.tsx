@@ -26,6 +26,7 @@ export function ImportExportPage() {
   const [transactional, setTransactional] = useState(true)
   const [previewMode, setPreviewMode] = useState<'idle' | 'preview' | 'validated'>('idle')
   const [importing, setImporting] = useState(false)
+  const [exporting, setExporting] = useState<'csv' | 'json' | null>(null)
   const [importResult, setImportResult] = useState<{ inserted: number; failed: number; errors: Array<{ row: number; message: string }> } | null>(null)
 
   const readOnly = auth.connection?.metadata?.readOnly === true
@@ -141,39 +142,29 @@ export function ImportExportPage() {
     }
   }
 
-  function exportCsv() {
-    if (!info) return
-    void api
-      .get<{ page: { columns: string[]; rows: Array<Record<string, unknown>>; total: number | null; truncated: boolean } }>('/api/data/rows', {
+  function exportFormat(fmt: 'csv' | 'json') {
+    if (!info || exporting) return
+    setExporting(fmt)
+    // The row cap is enforced server-side (the browser UI's 500/page limit
+    // used to 400 every export request). The response headers report whether
+    // the cap was actually reached, so the toast can be honest about it.
+    api
+      .getBlob<{ exported: number; truncated: boolean; limit: number }>('/api/data/export', {
         schema,
         table,
-        offset: 0,
+        format: fmt,
         limit: 10_000,
       })
-      .then((r) => {
-        const rows = r.page.rows
-        const content = [r.page.columns.join(','), ...rows.map((row) => r.page.columns.map((c) => `"${String(row[c] ?? '').replace(/"/g, '""')}"`).join(','))].join('\n')
-        download(content, 'text/csv', `${table}.csv`)
-        toast('success', `Exported ${rows.length} rows`, r.page.truncated ? 'truncated at 10,000 rows' : '')
+      .then(({ blob, meta }) => {
+        downloadBlob(blob, `${table}.${fmt}`)
+        toast('success', `Exported ${meta.exported} rows`, meta.truncated ? `truncated at ${meta.limit} rows — refine by table filter or use SQL Studio` : '')
       })
       .catch((err) => toast('error', err instanceof ApiError ? err.message : 'Export failed'))
+      .finally(() => setExporting(null))
   }
 
-  function exportJson() {
-    if (!info) return
-    void api
-      .get<{ page: { columns: string[]; rows: Array<Record<string, unknown>>; total: number | null; truncated: boolean } }>('/api/data/rows', {
-        schema,
-        table,
-        offset: 0,
-        limit: 10_000,
-      })
-      .then((r) => {
-        download(JSON.stringify(r.page.rows, null, 2), 'application/json', `${table}.json`)
-        toast('success', `Exported ${r.page.rows.length} rows`)
-      })
-      .catch((err) => toast('error', err instanceof ApiError ? err.message : 'Export failed'))
-  }
+  const exportCsv = () => exportFormat('csv')
+  const exportJson = () => exportFormat('json')
 
   if (accountOnly) {
     return <EmptyState icon={<ArrowUpDown className="h-10 w-10" />} title="Import/Export needs a database connection" description="Connect with a database URL to import and export table data." />
@@ -317,11 +308,11 @@ export function ImportExportPage() {
           </h2>
           {canExport ? (
             <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="secondary" onClick={exportCsv}>
-                <FileText className="h-3.5 w-3.5" /> Export CSV
+              <Button size="sm" variant="secondary" onClick={exportCsv} disabled={exporting !== null} loading={exporting === 'csv'}>
+                <FileText className="h-3.5 w-3.5" /> {exporting === 'csv' ? 'Preparing…' : 'Export CSV'}
               </Button>
-              <Button size="sm" variant="secondary" onClick={exportJson}>
-                <FileJson className="h-3.5 w-3.5" /> Export JSON
+              <Button size="sm" variant="secondary" onClick={exportJson} disabled={exporting !== null} loading={exporting === 'json'}>
+                <FileJson className="h-3.5 w-3.5" /> {exporting === 'json' ? 'Preparing…' : 'Export JSON'}
               </Button>
             </div>
           ) : (
@@ -338,12 +329,11 @@ export function ImportExportPage() {
   )
 }
 
-function download(content: string, type: string, name: string) {
-  const blob = new Blob([content], { type })
+function downloadBlob(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
   a.download = name
   a.click()
-  URL.revokeObjectURL(url)
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }

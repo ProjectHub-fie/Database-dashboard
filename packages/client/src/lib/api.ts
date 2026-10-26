@@ -212,10 +212,54 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
   }
 }
 
+export async function getBlob<T = unknown>(
+  path: string,
+  query?: RequestOptions['query'],
+): Promise<{ blob: Blob; meta: T }> {
+  // Strictly for file downloads: the endpoint sets Content-Disposition and
+  // X-Export-* headers instead of a JSON envelope, so the plain `request` JSON
+  // path must not be used. Errors still arrive as a JSON error envelope.
+  const base = API_BASE
+  let url = `${base}${path}`
+  if (query) {
+    const q = new URLSearchParams()
+    for (const [k, v] of Object.entries(query)) {
+      if (v !== undefined && v !== null) q.set(k, String(v))
+    }
+    const qs = q.toString()
+    if (qs) url += `?${qs}`
+  }
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: { Accept: 'text/csv, application/json' },
+    credentials: 'include',
+    cache: 'no-store',
+  })
+  if (!res.ok) {
+    let data: unknown = null
+    try {
+      data = await res.json()
+    } catch {
+      data = null
+    }
+    if (data && (data as { error?: unknown }).error) {
+      throw new ApiError(res.status, data as ApiErrorBody)
+    }
+    throw unreachableApiError(res.status, '')
+  }
+  const meta = {
+    exported: Number(res.headers.get('x-export-rows') ?? '0'),
+    truncated: String(res.headers.get('x-export-truncated') ?? 'false') === 'true',
+    limit: Number(res.headers.get('x-export-limit') ?? '0'),
+  } as T
+  return { blob: await res.blob(), meta }
+}
+
 /** Standard CRUD helpers. */
 export const api = {
   get: <T>(path: string, query?: RequestOptions['query']) =>
     request<T>(path, { method: 'GET', query }),
+  getBlob,
   post: <T>(path: string, body?: unknown, query?: RequestOptions['query']) =>
     request<T>(path, { method: 'POST', body, query }),
   put: <T>(path: string, body: unknown) => request<T>(path, { method: 'PUT', body }),

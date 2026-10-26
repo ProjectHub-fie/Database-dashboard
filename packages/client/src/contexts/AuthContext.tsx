@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react'
 import { api, ApiError, onConnectionLost } from '../lib/api'
 import { ConnectionStatus } from '../lib/types'
+import type { BootPhase } from '../components/loaders/PageLoader'
 
 export interface MeResponse {
   authenticated: boolean
@@ -30,6 +31,12 @@ interface AuthContextValue {
    * every panel failing with an opaque status.
    */
   apiUnreachable: boolean
+  /**
+   * Which bootstrap step is in flight, or null when bootstrapping is done.
+   * Drives the full-page loader copy so it names the real step instead of
+   * showing a generic spinner.
+   */
+  bootPhase: BootPhase | null
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -40,6 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [lastReauthAt, setLastReauthAt] = useState<number>(0)
   const [busy, setBusy] = useState(false)
   const [apiUnreachable, setApiUnreachable] = useState(false)
+  const [bootPhase, setBootPhase] = useState<BootPhase | null>('initializing')
 
   const reloadConnection = useCallback(async () => {
     try {
@@ -72,7 +80,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setMe({ authenticated: false })
         if (err instanceof ApiError && err.code === 'API_UNREACHABLE') setApiUnreachable(true)
       }
-      if (alive) void reloadConnection()
+      if (!alive) return
+      setBootPhase('connecting')
+      await reloadConnection()
+      if (alive) setBootPhase(null)
     }
     void boot()
     return () => {
@@ -149,6 +160,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         reauthedRecently,
         busy,
         apiUnreachable,
+        bootPhase,
       }}
     >
       {children}

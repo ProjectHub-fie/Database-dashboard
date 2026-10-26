@@ -28,7 +28,7 @@ import {
 } from 'lucide-react'
 
 /**
- * Entry screen: the three ways into DB Horizon.
+ * Entry screen: the three ways into DB Remote.
  *
  *  - Dashboard account → authenticates the person, creates the session cookie.
  *  - Database URL      → SQL access to exactly one database.
@@ -281,7 +281,7 @@ export function LoginPage() {
               <Database className="h-[18px] w-[18px]" />
             </span>
             <div className="leading-tight">
-              <p className="text-[15px] font-semibold tracking-tight text-slate-900 dark:text-white">DB Horizon</p>
+              <p className="text-[15px] font-semibold tracking-tight text-slate-900 dark:text-white">DB Remote</p>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">Database Management Tool</p>
             </div>
           </div>
@@ -305,7 +305,7 @@ export function LoginPage() {
         <ApiUnreachableBanner />
         <div className="mx-auto max-w-3xl text-center">
           <h1 className="text-balance text-[32px] font-extrabold leading-[1.06] tracking-[-0.035em] text-slate-900 sm:text-[44px] dark:text-white">
-            {signedIn ? 'Connect a database' : authRequired ? 'Sign in to DB Horizon' : 'Connect a database'}
+            {signedIn ? 'Connect a database' : authRequired ? 'Sign in to DB Remote' : 'Connect a database'}
           </h1>
           <p className="mx-auto mt-4 max-w-[34rem] text-pretty text-[15px] leading-relaxed text-slate-600 dark:text-slate-400">
             {signedIn

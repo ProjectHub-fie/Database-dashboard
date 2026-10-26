@@ -72,7 +72,7 @@ is diagnosable, but never the credential.
 ## Neon API key mode
 
 1. Go to **Neon Console → Settings → API keys** (or use the Neon CLI:
-   `neonctl api-keys create --name db-horizon`).
+   `neonctl api-keys create --name db-remote`).
 2. Create a **project-scoped** key when possible. A key scoped to one project can
    only manage that project; an account key can manage everything your account
    can. Project-scoped keys drastically reduce the blast radius of a leak.
