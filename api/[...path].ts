@@ -128,14 +128,42 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   // A self-referential origin makes this function call itself; Vercel reports
   // that as a bare 508 loop rather than a fixable error. Detect it here so a
   // misconfiguration produces one actionable response.
+  //
+  // The self-reference is easy to miss: on the Vercel edge the function's
+  // `x-forwarded-host` is the *deployment* host (`<deploy>.vercel.app`), not the
+  // public alias the browser used (`dbremote.vercel.app`), so a naive hostname
+  // comparison lets an origin that points back at this deployment look "usable"
+  // and silently proxy `/api/*` to the SPA fallback (a plain-text 404).
+  // Vercel domains (`*.vercel.app`, `.now.sh`, `.vercel.dev`) and loopback
+  // addresses can never be the persistent API this function proxies to: the
+  // stateful Express service cannot run in a serverless lifecycle. Treat any
+  // such origin as a loop regardless of which host this invocation serves.
   const ownHost = String(req.headers['x-forwarded-host'] ?? req.headers.host ?? '').split(':')[0]
-  const usable = origins.filter((o) => new URL(o).hostname !== ownHost)
+  const looksServerless = (host: string): boolean => {
+    const h = host.toLowerCase()
+    return (
+      h === 'localhost' ||
+      h === '127.0.0.1' ||
+      h === '::1' ||
+      h === '0.0.0.0' ||
+      h.endsWith('.vercel.app') ||
+      h.endsWith('.now.sh') ||
+      h.endsWith('.vercel.dev') ||
+      h === 'vercel.app'
+    )
+  }
+  const usable = origins.filter((o) => {
+    const originHost = new URL(o).hostname.toLowerCase()
+    if (originHost === ownHost.toLowerCase()) return false
+    if (looksServerless(originHost)) return false
+    return true
+  })
   if (!usable.length) {
     sendJson(
       res,
       503,
       'API_ORIGIN_LOOP',
-      'API_ORIGIN points at this deployment. Set it to the URL of the persistent DB Horizon API server.',
+      'API_ORIGIN points at a serverless or self-referential host. Set it to the URL of the persistent DB Horizon API server.',
     )
     return
   }
