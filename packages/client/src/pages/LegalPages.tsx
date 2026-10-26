@@ -35,7 +35,7 @@ export function PrivacyPage() {
     <LegalPage title="Privacy Policy" updated="October 24, 2026">
       <H2>What we store</H2>
       <p>
-        DB remote keeps <strong>only dashboard session metadata</strong> (session identifiers, audit
+        DB Remote keeps <strong>only dashboard session metadata</strong> (session identifiers, audit
         events, and — when you sign in to a dashboard account — your username and a password hash).
         Database connection strings, Neon API keys and passwords are kept <strong>in server memory
         only</strong> for the lifetime of your session and are wiped on disconnect, sign-out or
@@ -82,7 +82,7 @@ export function TermsPage() {
     <LegalPage title="Terms of Service" updated="October 24, 2026">
       <H2>Acceptance</H2>
       <p>
-        By using DB remote you agree to these terms and to the privacy policy. This dashboard is a
+        By using DB Remote you agree to these terms and to the privacy policy. This dashboard is a
         management surface for your database and cloud-provider resources; you remain responsible
         for the resources you connect and for the access you grant.
       </p>

@@ -17,6 +17,7 @@ import { Store } from '../storage/store.js'
 import { argon2idOptions } from '../security/auth.js'
 import { createLogger } from '../lib/logger.js'
 import { AppError } from '../lib/errors.js'
+import { dashboardStorePath } from '../lib/store-path.js'
 
 async function run(): Promise<void> {
   const config = loadConfig()
@@ -37,7 +38,7 @@ async function run(): Promise<void> {
     })
   }
 
-  const store = new Store(config.dataDir ? `${config.dataDir}/db-horizon.sqlite` : ':memory:', { logger })
+  const store = new Store(dashboardStorePath(config.dataDir), { logger })
 
   const { default: argon2 } = await import('argon2')
   const hash = await argon2.hash(password, argon2idOptions)

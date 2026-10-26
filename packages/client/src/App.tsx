@@ -1,7 +1,8 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from './contexts/AuthContext'
 import { AppShell } from './components/AppShell'
-import { ErrorBoundary, Spinner } from './components/ui'
+import { ErrorBoundary } from './components/ui'
+import { PageLoader } from './components/loaders/PageLoader'
 import { LoginPage } from './pages/LoginPage'
 import { OverviewPage } from './pages/OverviewPage'
 import { DataBrowserPage } from './pages/DataBrowserPage'
@@ -22,13 +23,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   const auth = useAuth()
   const location = useLocation()
 
-  if (auth.me === null) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <Spinner className="h-8 w-8" />
-      </div>
-    )
-  }
+  if (auth.me === null) return <PageLoader phase={auth.bootPhase ?? 'initializing'} />
   // Account sign-in is only mandatory while the server enforces it. When auth
   // is temporarily disabled, an anonymous visitor with a live connection may
   // use the dashboard; account-only screens (settings/security/audit) still
@@ -70,13 +65,7 @@ function Shell({ children }: { children: React.ReactNode }) {
  */
 function EntryRoute({ children }: { children: React.ReactNode }) {
   const auth = useAuth()
-  if (auth.me === null) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <Spinner className="h-8 w-8" />
-      </div>
-    )
-  }
+  if (auth.me === null) return <PageLoader phase={auth.bootPhase ?? 'initializing'} />
   if (auth.me.authenticated && auth.connection?.connected) {
     return <Navigate to="/overview" replace />
   }
@@ -92,11 +81,7 @@ function EntryRoute({ children }: { children: React.ReactNode }) {
 function RequireConnection({ children }: { children: React.ReactNode }) {
   const auth = useAuth()
   if (auth.me === null || auth.connection === null) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <Spinner className="h-8 w-8" />
-      </div>
-    )
+    return <PageLoader phase={auth.bootPhase ?? 'connecting'} />
   }
   if (!auth.connection.connected) return <Navigate to="/connect" replace />
   return <>{children}</>

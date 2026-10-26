@@ -21,6 +21,7 @@ import {
   Clock,
   AlertTriangle,
   Layers,
+  CheckCircle2,
 } from 'lucide-react'
 import { cn } from '../lib/cn'
 
@@ -47,6 +48,10 @@ export function SqlStudioPage() {
   const [running, setRunning] = useState<Record<string, boolean>>({})
   const [confirmingSql, setConfirmingSql] = useState<string | null>(null)
   const [errors, setErrors] = useState<Record<string, string | undefined>>({})
+  // Classification of the statement that produced `results[tab]`, so a write
+  // with no returned columns can be reported as such instead of the panel
+  // falling back to "Run a query to see results".
+  const [classifications, setClassifications] = useState<Record<string, string | undefined>>({})
 
   const [timeoutMs, setTimeoutMs] = useState(30_000)
   const [maxRows, setMaxRows] = useState(1_000)
@@ -109,8 +114,9 @@ export function SqlStudioPage() {
     if (!canRun || running[active.id]) return
     setRunning((r) => ({ ...r, [active.id]: true }))
     setErrors((e) => ({ ...e, [active.id]: undefined }))
+    setClassifications((c) => ({ ...c, [active.id]: undefined }))
     try {
-      const res = await api.post<{ result: QueryResult; durationMs: number }>('/api/sql/run', {
+      const res = await api.post<{ result: QueryResult; durationMs: number; classification?: string }>('/api/sql/run', {
         sql: sqlToRun,
         statementTimeoutMs: timeoutMs,
         maxRows,
@@ -118,6 +124,7 @@ export function SqlStudioPage() {
         transaction: transactionState ? { mode: transactionState as 'begin' | 'commit' | 'rollback' } : undefined,
       })
       setResults((m) => ({ ...m, [active.id]: res.result }))
+      setClassifications((m) => ({ ...m, [active.id]: res.classification }))
       toast('success', 'Query completed', `${res.result.rowCount ?? 0} rows · ${res.result.durationMs} ms`)
       void api.get<{ history: QueryHistoryEntry[] }>('/api/sql/history', { limit: 50 }).then((r) => setHistory(r.history))
     } catch (err) {
@@ -385,7 +392,10 @@ export function SqlStudioPage() {
                   <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Results</span>
                   {activeResult && (
                     <span className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                      <Clock className="h-3 w-3" /> {activeResult.durationMs} ms · {activeResult.rowCount ?? 0} rows
+                      <Clock className="h-3 w-3" /> {activeResult.durationMs} ms
+                      {activeResult.rowCount !== null && activeResult.rowCount !== undefined
+                        ? ` · ${activeResult.rowCount} row${activeResult.rowCount === 1 ? '' : 's'} affected`
+                        : ` · ${activeResult.rows.length} rows`}
                       {activeResult.truncated && ' · truncated'}
                       <button onClick={copyResults} aria-label="Copy results" className="rounded p-1 hover:bg-slate-100 dark:hover:bg-slate-700">
                         <Copy className="h-3.5 w-3.5" />
@@ -410,6 +420,16 @@ export function SqlStudioPage() {
                     <div className="flex h-full items-center justify-center gap-2 text-sm text-slate-400">
                       <Spinner /> Running…
                     </div>
+                  ) : activeResult ? (
+                    <EmptyState
+                      icon={classifications[active.id] === 'write' || classifications[active.id] === 'ddl' ? <CheckCircle2 className="h-8 w-8 text-emerald-500" /> : undefined}
+                      title={classifications[active.id] === 'write' || classifications[active.id] === 'ddl' ? 'Statement executed successfully' : 'No rows returned'}
+                      description={
+                        classifications[active.id] === 'write' || classifications[active.id] === 'ddl'
+                          ? `${activeResult.rowCount ?? 0} row${activeResult.rowCount === 1 ? '' : 's'} ${classifications[active.id] === 'write' ? 'affected' : 'modified'}, ${activeResult.durationMs} ms. Queries without a RETURNING clause have nothing to display here.`
+                          : 'Results appear here with row count and duration.'
+                      }
+                    />
                   ) : (
                     <EmptyState title="Run a query to see results" description="Results appear here with row count and duration." />
                   )}

@@ -1,4 +1,4 @@
-# DB Horizon
+# DB Remote
 
 Multi-provider remote database management dashboard. **Neon PostgreSQL is the first
 implemented provider**; the provider registry and capability system are designed so

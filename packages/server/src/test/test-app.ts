@@ -152,48 +152,48 @@ export class TestAgent {
     return this.cookies.length ? { Cookie: this.cookies.join('; ') } : {}
   }
 
-  async get(path: string): Promise<{ status: number; body: any; headers: Record<string, unknown> }> {
+  async get(path: string): Promise<{ status: number; body: any; text: string; headers: Record<string, unknown> }> {
     const supertest = (await import('supertest')).default
     const res = await supertest(this.app).get(path).set(this.header())
     this.persist(res)
-    return { status: res.status, body: res.body, headers: res.headers }
+    return { status: res.status, body: res.body, text: res.text, headers: res.headers }
   }
 
   async post(
     path: string,
     body?: Record<string, unknown> | null,
     csrfToken?: string,
-  ): Promise<{ status: number; body: any; headers: Record<string, unknown> }> {
+  ): Promise<{ status: number; body: any; text: string; headers: Record<string, unknown> }> {
     const supertest = (await import('supertest')).default
     let req = supertest(this.app).post(path).set(this.header())
     if (csrfToken) req = req.set('x-csrf-token', csrfToken)
     if (body !== undefined && body !== null) req = req.send(body)
     const res = await req
     this.persist(res)
-    return { status: res.status, body: res.body, headers: res.headers }
+    return { status: res.status, body: res.body, text: res.text, headers: res.headers }
   }
 
   async put(
     path: string,
     body?: Record<string, unknown> | null,
     csrfToken?: string,
-  ): Promise<{ status: number; body: any; headers: Record<string, unknown> }> {
+  ): Promise<{ status: number; body: any; text: string; headers: Record<string, unknown> }> {
     const supertest = (await import('supertest')).default
     let req = supertest(this.app).put(path).set(this.header())
     if (csrfToken) req = req.set('x-csrf-token', csrfToken)
     if (body !== undefined && body !== null) req = req.send(body)
     const res = await req
     this.persist(res)
-    return { status: res.status, body: res.body, headers: res.headers }
+    return { status: res.status, body: res.body, text: res.text, headers: res.headers }
   }
 
-  async delete(path: string, csrfToken?: string): Promise<{ status: number; body: any; headers: Record<string, unknown> }> {
+  async delete(path: string, csrfToken?: string): Promise<{ status: number; body: any; text: string; headers: Record<string, unknown> }> {
     const supertest = (await import('supertest')).default
     let req = supertest(this.app).delete(path).set(this.header())
     if (csrfToken) req = req.set('x-csrf-token', csrfToken)
     const res = await req
     this.persist(res)
-    return { status: res.status, body: res.body, headers: res.headers }
+    return { status: res.status, body: res.body, text: res.text, headers: res.headers }
   }
 
   private persist(res: { headers: { 'set-cookie'?: unknown } }): void {

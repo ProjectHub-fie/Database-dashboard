@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { AppError } from '../lib/errors.js'
 import { ctxOf } from './context.js'
 import { requireRecentAuth, actorId } from './middleware.js'
+import { csvHeader, csvRow, exportFilename, jsonValue } from '../lib/tabular.js'
 
 const identSchema = z.object({
   schema: z.string().regex(/^[A-Za-z_][A-Za-z0-9_$]{0,62}$/),
@@ -23,6 +24,18 @@ const rowMutationSchema = z.object({
 })
 
 const MAX_ROW_BODY = 500
+
+/** Hard server-side ceiling for a single export file. The query string can
+ *  lower this, never raise it. */
+const EXPORT_MAX_ROWS = 50_000
+
+const exportSchema = identSchema.extend({
+  format: z.enum(['csv', 'json']).default('csv'),
+  limit: z.coerce.number().int().min(1).max(EXPORT_MAX_ROWS).default(10_000),
+  orderBy: z.string().regex(/^[A-Za-z_][A-Za-z0-9_$]{0,62}$/).optional(),
+  orderDir: z.enum(['asc', 'desc']).optional(),
+  search: z.string().max(200).optional(),
+})
 
 export function dataRouter(): Router {
   const router = Router()
@@ -66,6 +79,50 @@ export function dataRouter(): Router {
     const { schema, table, offset, limit, orderBy, orderDir, search } = parsed.data
     const page = await qs.browseRows(schema, table, { offset, limit, orderBy, orderDir, search })
     res.json({ page })
+  })
+
+  /**
+   * GET /api/data/export — download a table as CSV or JSON.
+   *
+   * Exports used to be built in the browser from `/api/data/rows`, but that
+   * route caps `limit` at 500 for interactive paging, so asking for 10,000 rows
+   * answered 400 and every export button failed. The file is now produced here,
+   * with the same filters and ordering the browser shows.
+   */
+  router.get('/export', async (req: Request, res: Response) => {
+    const parsed = exportSchema.safeParse(req.query)
+    if (!parsed.success) {
+      throw new AppError({
+        code: 'BAD_REQUEST',
+        message: `Invalid export parameters (limit must be 1-${EXPORT_MAX_ROWS})`,
+      })
+    }
+    const { qs } = await primary(req, res)
+    const { schema, table, format, limit, orderBy, orderDir, search } = parsed.data
+    const out = await qs.exportTableRows({ schema, table, maxRows: limit, orderBy, orderDir, search })
+
+    res.status(200)
+    res.setHeader('Content-Type', format === 'csv' ? 'text/csv; charset=utf-8' : 'application/json; charset=utf-8')
+    res.setHeader('Content-Disposition', `attachment; filename="${exportFilename(schema, table, format)}"`)
+    res.setHeader('X-Export-Rows', String(out.rowCount))
+    res.setHeader('X-Export-Truncated', String(out.truncated))
+    res.setHeader('X-Export-Limit', String(limit))
+
+    if (format === 'csv') {
+      res.write(`${csvHeader(out.columns)}\n`)
+      for await (const row of out.rows) res.write(`${csvRow(out.columns, row)}\n`)
+    } else {
+      // Written incrementally so one wide table does not become one string.
+      let first = true
+      res.write('[\n')
+      for await (const row of out.rows) {
+        if (!first) res.write(',\n')
+        res.write(JSON.stringify(Object.fromEntries(out.columns.map((c) => [c, jsonValue(row[c])]))))
+        first = false
+      }
+      res.write('\n]\n')
+    }
+    res.end()
   })
 
   // POST /api/data/rows — insert a row

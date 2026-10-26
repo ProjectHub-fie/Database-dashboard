@@ -1,6 +1,6 @@
 # Adding a provider (registry guide)
 
-DB Horizon is a multi-provider platform. Neon is the only fully implemented and
+DB Remote is a multi-provider platform. Neon is the only fully implemented and
 enabled provider in this release. This document explains the provider contract so
 future providers can be added without rewriting the core application.
 

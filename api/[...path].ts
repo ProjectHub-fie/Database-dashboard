@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 /**
- * Vercel entrypoint for the DB Horizon API.
+ * Vercel entrypoint for the DB Remote API.
  *
  * The dashboard is a stateful Express service: it holds per-session PostgreSQL
  * pools (`pg`), connection secrets in memory only, and a SQLite store for users,
@@ -120,7 +120,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       res,
       503,
       'API_NOT_CONFIGURED',
-      'The API origin is not configured. Set API_ORIGIN on this deployment to the DB Horizon server URL.',
+      'The API origin is not configured. Set API_ORIGIN on this deployment to the DB Remote server URL.',
     )
     return
   }
@@ -163,7 +163,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       res,
       503,
       'API_ORIGIN_LOOP',
-      'API_ORIGIN points at a serverless or self-referential host. Set it to the URL of the persistent DB Horizon API server.',
+      'API_ORIGIN points at a serverless or self-referential host. Set it to the URL of the persistent DB Remote API server.',
     )
     return
   }

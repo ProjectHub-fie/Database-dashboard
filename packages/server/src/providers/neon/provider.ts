@@ -150,7 +150,7 @@ export class NeonProvider implements Provider<PgConn> {
       role: raw.role,
       password,
       pinnedAddress: raw.verified.address,
-      applicationName: 'db-horizon',
+      applicationName: 'db-remote',
     })
 
     try {
@@ -173,7 +173,7 @@ export class NeonProvider implements Provider<PgConn> {
         ssl: { rejectUnauthorized: true, servername: raw.host },
         stream: undefined,
         connectionTimeoutMillis: 10_000,
-        applicationName: 'db-horizon',
+        applicationName: 'db-remote',
       },
     }
     // Expose the same pinned stream factory used for the main client on the

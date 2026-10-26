@@ -41,8 +41,8 @@ export class PgQuerySession implements QuerySession {
     private readonly opts: QuerySessionOptions = {},
   ) {
     this.cancelPool = opts.buildCancellationConnection
-      ? opts.buildCancellationConnection({ conn, applicationName: 'db-horizon-cancel' })
-      : buildSharedPool(conn, 'db-horizon-cancel')
+      ? opts.buildCancellationConnection({ conn, applicationName: 'db-remote-cancel' })
+      : buildSharedPool(conn, 'db-remote-cancel')
     this.conn.client
       .query('SELECT pg_backend_pid() AS pid')
       .then((r) => {
@@ -112,6 +112,35 @@ export class PgQuerySession implements QuerySession {
       orderDir: opts.orderDir === 'desc' ? 'desc' : 'asc',
       filters: searchFilter,
     })
+  }
+
+  exportTableRows(input: {
+    schema: string
+    table: string
+    maxRows: number
+    orderBy?: string
+    orderDir?: 'asc' | 'desc'
+    search?: string
+  }): Promise<{
+    columns: string[]
+    rows: AsyncIterable<Record<string, unknown>>
+    truncated: boolean
+    rowCount: number
+    maxRows: number
+  }> {
+    const searchFilter = input.search
+      ? [{ column: '*', op: 'contains' as const, value: input.search }]
+      : undefined
+    return this.adapter
+      .exportTableRows(this.conn, {
+        schema: input.schema,
+        table: input.table,
+        maxRows: input.maxRows,
+        orderBy: input.orderBy,
+        orderDir: input.orderDir,
+        filters: searchFilter,
+      })
+      .then((r) => ({ ...r, maxRows: input.maxRows }))
   }
 
   insertRow(input: { schema: string; table: string; row: Record<string, unknown>; maxRows?: number }): Promise<QueryResult> {

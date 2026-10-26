@@ -1,4 +1,4 @@
-# DB Horizon — development guide
+# DB Remote — development guide
 
 Multi-provider remote database management dashboard. Neon PostgreSQL is the first
 implemented provider. Build commands:

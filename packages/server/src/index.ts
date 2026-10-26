@@ -17,6 +17,7 @@ import { registerApiRoutes } from './api/routes.js'
 import { AnonymousSessionStore } from './security/anon-session.js'
 import { forwardAsyncErrors } from './api/async-errors.js'
 import { requestLogMiddleware, recentRequests } from './lib/request-log.js'
+import { dashboardStorePath } from './lib/store-path.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const config = loadConfig()
@@ -27,7 +28,7 @@ export async function createApp(): Promise<{
   auth: AuthService
   sessions: ProviderSessionManager
 }> {
-  const store = new Store(config.dataDir ? path.join(config.dataDir, 'db-horizon.sqlite') : ':memory:')
+  const store = new Store(dashboardStorePath(config.dataDir))
   const registry = new ProviderRegistryImpl()
   const provider = new NeonProvider({})
   registry.register(provider)
@@ -171,7 +172,7 @@ if (process.env.NODE_ENV !== 'test') {
     .then(({ app, store }) => {
       app.listen(config.port, config.host, () => {
         // eslint-disable-next-line no-console
-        console.log(`DB Horizon API listening on http://${config.host}:${config.port}`)
+        console.log(`DB Remote API listening on http://${config.host}:${config.port}`)
       })
 
       const gracefulShutdown = (signal: string) => {
@@ -186,7 +187,7 @@ if (process.env.NODE_ENV !== 'test') {
     })
     .catch((err) => {
       // eslint-disable-next-line no-console
-      console.error('Fatal: failed to start DB Horizon', err)
+      console.error('Fatal: failed to start DB Remote', err)
       process.exit(1)
     })
 }

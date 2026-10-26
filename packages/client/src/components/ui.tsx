@@ -64,7 +64,9 @@ export function Card({ children, className }: { children: ReactNode; className?:
 }
 
 export function Skeleton({ className }: { className?: string }) {
-  return <div className={cn('animate-pulse rounded-md bg-slate-100 dark:bg-slate-800', className)} />
+  // Shimmer from the shared loading system; honours prefers-reduced-motion by
+  // falling back to a flat block instead of pulsing forever.
+  return <div className={cn('dbh-skeleton rounded-md', className)} aria-hidden="true" />
 }
 
 export function EmptyState({
