@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import { useOnReconnect } from '../contexts/NetworkContext'
 import { useToast } from '../contexts/ToastContext'
 import { api, ApiError } from '../lib/api'
 import { RoleInfo, GrantInfo } from '../lib/types'
@@ -91,6 +92,7 @@ export function SchemaManagerPage() {
   }, [toast])
 
   useEffect(() => loadTree(), [loadTree])
+  useOnReconnect(loadTree)
 
   function switchTab(t: 'ddl' | 'roles') {
     setTabs(t)

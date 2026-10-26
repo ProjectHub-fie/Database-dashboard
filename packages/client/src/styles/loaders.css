@@ -349,6 +349,78 @@ html:not(.dark) {
   animation: dbh-connecting 1.4s ease-in-out infinite;
 }
 
+/* ---------------------------------------------------------------------------
+   Reconnect overlay
+   The link dropped: same orbit stage as boot so it reads as the product
+   holding on, not a generic error page. The five dots pulse in sequence after
+   "Disconnected" to make the wait legible without a progress bar that would be
+   lying about how long it will take.
+   --------------------------------------------------------------------------- */
+
+.dbh-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  /* Optically centred on the x-height, not dropped to the baseline, so the
+   * sequence reads as a pause rather than a stray ellipsis. */
+  position: relative;
+  top: -1px;
+  margin: 0 3px 0 2px;
+}
+
+.dbh-dots > i {
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.25;
+  animation: dbh-dot-pulse 1.5s ease-in-out infinite;
+}
+
+.dbh-dots > i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.dbh-dots > i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+.dbh-dots > i:nth-child(4) {
+  animation-delay: 0.45s;
+}
+.dbh-dots > i:nth-child(5) {
+  animation-delay: 0.6s;
+}
+
+@keyframes dbh-dot-pulse {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-1px);
+  }
+}
+
+/* The overlay dims what is underneath instead of hiding it, so the operator
+ * keeps their bearings — the page they were on is still visibly there. */
+.dbh-reconnect {
+  animation: dbh-reconnect-in 220ms ease-out both;
+}
+
+@keyframes dbh-reconnect-in {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(2px);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   /* Keep the composition (rings, nodes, cylinder) but drop the movement. The
    * status text still changes on real state, so the UI never looks frozen. */
@@ -360,8 +432,15 @@ html:not(.dark) {
   .dbh-loader-status,
   .dbh-skeleton,
   .dbh-inline-spinner,
-  .dbh-dot-connecting {
+  .dbh-dot-connecting,
+  .dbh-dots > i,
+  .dbh-reconnect {
     animation: none !important;
+  }
+
+  /* Without the pulse the dots would look like dead text; hold them lit. */
+  .dbh-dots > i {
+    opacity: 0.6;
   }
 
   .dbh-trail {

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import { useOnReconnect } from '../contexts/NetworkContext'
 import { api, ApiError } from '../lib/api'
 import { DatabaseStats } from '../lib/types'
 import { Card, Skeleton, Badge, Button, EmptyState } from '../components/ui'
@@ -78,6 +79,8 @@ export function OverviewPage() {
     const id = window.setInterval(() => void load(), 30_000)
     return () => window.clearInterval(id)
   }, [load, accountOnly])
+
+  useOnReconnect(() => void load())
 
   useEffect(() => {
     if (accountOnly) return
