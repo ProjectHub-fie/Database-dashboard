@@ -194,3 +194,25 @@ implemented provider. Build commands:
   attached. To add another provider, implement the optional
   `ControlPlaneAdapter.getConnectionUri()` (see docs/PROVIDERS.md). The Neon
   client method is `getConnectionUri` → `GET /projects/{id}/connection_uri`.
+
+- **An unreachable API is not a lost session.** `lib/api.ts` reports every HTTP
+  response to `lib/link.ts`; only a failed transport (no status at all) means
+  the link is down. `AuthContext.bootstrap` and `reloadConnection` must return
+  early on `isTransportFailure()`: guessing `authenticated: false` or
+  `connected: false` during a blip sent a signed-in operator to `/connect` and
+  made them re-enter credentials for a pool that was still open server-side.
+  `api.test.ts` pins the 401-vs-transport distinction.
+
+- **The reconnect overlay sits above the router on purpose.** `ReconnectOverlay`
+  covers the viewport instead of replacing the route, so a half-written SQL
+  statement survives an outage. The cost is that a panel whose fetch failed
+  during the gap keeps rendering its stale "Network error" once the overlay
+  clears, so pages with a mount-time loader pass it to `useOnReconnect()`
+  (`contexts/NetworkContext.tsx`) to refetch. A new page that loads data once
+  needs the same wiring, otherwise recovery is cosmetic only.
+
+- **`link.ts` probes own recovery, not the components.** Backoff is
+  `BACKOFF_MS`, a single failed request is ignored for `GRACE_MS` so ordinary
+  flakiness never flashes a full-screen overlay, and the `epoch` counter makes
+  an in-flight probe abandon its result when real traffic has already settled
+  the question. `link.test.ts` covers each transition.

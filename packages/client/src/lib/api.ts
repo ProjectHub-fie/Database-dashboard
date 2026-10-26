@@ -1,5 +1,7 @@
 import { ApiErrorBody } from './types'
 import { requestReauth } from './reauth'
+import { API_BASE } from './api-base'
+import { link } from './link'
 
 /**
  * Thin fetch wrapper. Credentials travel in HttpOnly cookies; the CSRF token
@@ -8,13 +10,6 @@ import { requestReauth } from './reauth'
  */
 
 const CSRF_COOKIE = 'dbh_csrf'
-
-/**
- * Optional API origin for split deployments (static frontend on Vercel, API
- * elsewhere). Empty means same-origin, which is the default. This is a public
- * URL only — credentials are never configured client-side.
- */
-const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
 
 function readCookie(name: string): string | undefined {
   const m = document.cookie.match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`))
@@ -86,6 +81,12 @@ export class ApiError extends Error {
   }
 }
 
+/** A failure of the transport, not of the endpoint: the request never got an
+ *  answer. Used to decide between "this call failed" and "the link is down". */
+export function isTransportFailure(err: unknown): boolean {
+  return err instanceof ApiError && (err.status === 0 || err.code === 'NETWORK' || err.code === 'TIMEOUT')
+}
+
 export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
   query?: Record<string, string | number | boolean | undefined>
@@ -153,6 +154,9 @@ async function doRequest<T>(path: string, opts: RequestOptions, csrfRetry = true
       body: body !== undefined ? JSON.stringify(body) : undefined,
       signal: controller.signal,
     })
+    // Any HTTP response at all proves the API is up; the status is the
+    // endpoint's business. This is what clears the reconnecting overlay.
+    link.reportReachable()
     if (res.status === 204) return undefined as T
     const text = await res.text()
     let data: unknown = null
@@ -166,7 +170,13 @@ async function doRequest<T>(path: string, opts: RequestOptions, csrfRetry = true
       // body therefore means the request never reached Express: the hosting
       // layer answered instead (a platform 404/502 page). Saying "Request
       // failed (404)" here hides months of debugging, so name the real cause.
-      if (data === null) throw unreachableApiError(res.status, text)
+      if (data === null) {
+        // A 5xx page from the platform edge is an outage (a deploy in flight,
+        // a dead upstream), not the permanent misconfiguration that a non-JSON
+        // 404 describes, so it belongs to the reconnect loop.
+        if (res.status >= 500) link.reportUnreachable()
+        throw unreachableApiError(res.status, text)
+      }
       const apiError = new ApiError(res.status, (data as ApiErrorBody) ?? undefined)
       // Stale anonymous session (e.g. the backend restarted): re-mint the cookie
       // and retry the same request exactly once. Never retries blindly, so a
@@ -184,8 +194,10 @@ async function doRequest<T>(path: string, opts: RequestOptions, csrfRetry = true
   } catch (err) {
     if (err instanceof ApiError) throw err
     if (err instanceof DOMException && err.name === 'AbortError') {
+      link.reportUnreachable()
       throw new ApiError(408, { error: { code: 'TIMEOUT', message: 'The request timed out' } })
     }
+    link.reportUnreachable()
     throw new ApiError(0, {
       error: { code: 'NETWORK', message: 'Network error. Check your connection and try again.' },
     })
@@ -229,12 +241,21 @@ export async function getBlob<T = unknown>(
     const qs = q.toString()
     if (qs) url += `?${qs}`
   }
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: { Accept: 'text/csv, application/json' },
-    credentials: 'include',
-    cache: 'no-store',
-  })
+  let res: Response
+  try {
+    res = await fetch(url, {
+      method: 'GET',
+      headers: { Accept: 'text/csv, application/json' },
+      credentials: 'include',
+      cache: 'no-store',
+    })
+  } catch {
+    link.reportUnreachable()
+    throw new ApiError(0, {
+      error: { code: 'NETWORK', message: 'Network error. Check your connection and try again.' },
+    })
+  }
+  link.reportReachable()
   if (!res.ok) {
     let data: unknown = null
     try {

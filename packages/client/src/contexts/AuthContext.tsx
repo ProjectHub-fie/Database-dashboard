@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react'
-import { api, ApiError, onConnectionLost } from '../lib/api'
+import { api, ApiError, isTransportFailure, onConnectionLost } from '../lib/api'
 import { ConnectionStatus } from '../lib/types'
 import type { BootPhase } from '../components/loaders/PageLoader'
+import { link } from '../lib/link'
 
 export interface MeResponse {
   authenticated: boolean
@@ -55,6 +56,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setConnection(status)
       setApiUnreachable(false)
     } catch (err) {
+      // A dropped link is not an answer about the session. Reporting
+      // `connected: false` here would bounce the operator to /connect and make
+      // them re-enter credentials for a pool that is still open server-side.
+      if (isTransportFailure(err)) return
       setConnection({ connected: false })
       if (err instanceof ApiError && err.code === 'API_UNREACHABLE') setApiUnreachable(true)
     }
@@ -68,28 +73,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   useEffect(() => onConnectionLost(() => setConnection({ connected: false })), [])
 
-  useEffect(() => {
-    let alive = true
-    async function boot() {
+  /**
+   * Ask the server who we are and whether a connection is live.
+   *
+   * `announce` drives the full-page loader. A re-bootstrap after an outage
+   * passes false: the reconnect overlay is already covering the screen, and
+   * flipping `me` back to null would tear down the page underneath it.
+   */
+  const bootstrap = useCallback(
+    async (announce = true) => {
+      if (announce) setBootPhase('initializing')
       try {
         const m = await api.get<MeResponse>('/api/auth/me')
-        if (!alive) return
         setMe(m)
       } catch (err) {
-        if (!alive) return
+        // Same reasoning as reloadConnection: guessing "signed out" during an
+        // outage sends a signed-in operator to the connect screen for what is
+        // usually a two-second blip. Leave `me` null so the reconnect overlay
+        // is what they see, and finish this bootstrap when the link returns.
+        if (isTransportFailure(err)) return
         setMe({ authenticated: false })
         if (err instanceof ApiError && err.code === 'API_UNREACHABLE') setApiUnreachable(true)
       }
-      if (!alive) return
       setBootPhase('connecting')
       await reloadConnection()
-      if (alive) setBootPhase(null)
-    }
-    void boot()
-    return () => {
-      alive = false
-    }
-  }, [reloadConnection])
+      setBootPhase(null)
+    },
+    [reloadConnection],
+  )
+
+  useEffect(() => {
+    void bootstrap()
+  }, [bootstrap])
+
+  /**
+   * A failed bootstrap used to be permanent: the first `/api/auth/me` after a
+   * dead network fell into the catch, `me` became `{ authenticated: false }`,
+   * and the operator landed on the connect screen with a valid session still
+   * sitting on the server. Re-running the bootstrap when the link returns makes
+   * that transient instead.
+   */
+  useEffect(() => {
+    let previous = link.getSnapshot().state
+    return link.subscribe((snapshot) => {
+      if (previous === 'reconnecting' && snapshot.state === 'online') void bootstrap(false)
+      previous = snapshot.state
+    })
+  }, [bootstrap])
 
   const login = useCallback(async (username: string, password: string) => {
     setBusy(true)

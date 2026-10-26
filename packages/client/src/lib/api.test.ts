@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { api, ApiError, onConnectionLost } from './api.js'
+import { api, ApiError, isTransportFailure, onConnectionLost } from './api.js'
 
 /**
  * Pins the contract between server status codes and the client's "the
@@ -50,5 +50,37 @@ describe('connection-lost handling', () => {
     await expect(api.post('/api/auth/login', {})).rejects.toBeInstanceOf(ApiError)
     off()
     expect(lost).toBe(0)
+  })
+})
+
+describe('transport failures', () => {
+  it('reports a dead link as a transport failure, not an answer', async () => {
+    // The socket never opened: fetch rejects, there is no status to read.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('Failed to fetch')
+      }),
+    )
+    const err = await api.get('/api/connections/status').catch((e: unknown) => e)
+    expect(isTransportFailure(err)).toBe(true)
+  })
+
+  it('does not mistake a server answer for a transport failure', async () => {
+    // This is the distinction AuthContext relies on: a 401 says something about
+    // the session, while a failed fetch says nothing at all. Treating the second
+    // as the first bounces a signed-in operator to /connect during a blip.
+    respondWith(401, { error: { code: 'UNAUTHORIZED', message: 'No active database session.' } })
+    const err = await api.get('/api/connections/status').catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(ApiError)
+    expect(isTransportFailure(err)).toBe(false)
+  })
+
+  it('does not treat a feature 403 or a server error as a lost link', async () => {
+    for (const status of [403, 500]) {
+      respondWith(status, { error: { code: 'FEATURE_UNAVAILABLE', message: 'nope' } })
+      const err = await api.get('/api/sql/saved').catch((e: unknown) => e)
+      expect(isTransportFailure(err)).toBe(false)
+    }
   })
 })

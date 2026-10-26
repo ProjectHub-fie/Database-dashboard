@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import { useOnReconnect } from '../contexts/NetworkContext'
 import { api, ApiError } from '../lib/api'
 import { Project, ProviderOperation, Endpoint } from '../lib/types'
 import { Badge, Button, Card, EmptyState, Select, Skeleton } from '../components/ui'
@@ -52,6 +53,7 @@ export function OperationsPage() {
   useEffect(() => {
     void load()
   }, [load])
+  useOnReconnect(() => void load())
 
   const statusTone = (s: ProviderOperation['status']) =>
     s === 'finished' ? 'green' : s === 'failed' || s === 'error' || s === 'canceled' ? 'rose' : s === 'canceling' ? 'amber' : 'sky'

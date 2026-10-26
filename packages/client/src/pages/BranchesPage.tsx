@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { useOnReconnect } from '../contexts/NetworkContext'
 import { useToast } from '../contexts/ToastContext'
 import { api, ApiError } from '../lib/api'
 import { Project, Branch, ProviderOperation } from '../lib/types'
@@ -56,6 +57,7 @@ export function BranchesPage() {
   useEffect(() => {
     void load()
   }, [load])
+  useOnReconnect(() => void load())
 
   async function createBranch() {
     if (!selectedProject) return

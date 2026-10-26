@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { useOnReconnect } from '../contexts/NetworkContext'
 import { useToast } from '../contexts/ToastContext'
 import { api, ApiError } from '../lib/api'
 import { Project, Branch, Database, ProviderOperation } from '../lib/types'
@@ -77,6 +78,7 @@ export function DatabasesPage() {
   useEffect(() => {
     void load()
   }, [load])
+  useOnReconnect(() => void load())
 
   async function createDatabase() {
     if (!selectedProject || !selectedBranch || !newName.trim()) return

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import { useOnReconnect } from '../contexts/NetworkContext'
 import { useToast } from '../contexts/ToastContext'
 import { api, ApiError } from '../lib/api'
 import { SchemaObjectSummary, TableInfo } from '../lib/types'
@@ -54,6 +55,7 @@ export function ImportExportPage() {
   useEffect(() => {
     if (!accountOnly) void loadTables()
   }, [accountOnly, loadTables])
+  useOnReconnect(() => void loadTables())
 
   useEffect(() => {
     if (!schema || !table) return

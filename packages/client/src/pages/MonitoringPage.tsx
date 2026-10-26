@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import { useOnReconnect } from '../contexts/NetworkContext'
 import { api, ApiError } from '../lib/api'
 import { DatabaseStats } from '../lib/types'
 import { Card, Badge, Skeleton, EmptyState, Button } from '../components/ui'
@@ -33,6 +34,8 @@ export function MonitoringPage() {
     const id = window.setInterval(() => void load(), 30_000)
     return () => window.clearInterval(id)
   }, [accountOnly])
+
+  useOnReconnect(() => void load())
 
   if (accountOnly) {
     return (

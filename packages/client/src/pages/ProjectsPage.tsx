@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { useOnReconnect } from '../contexts/NetworkContext'
 import { useToast } from '../contexts/ToastContext'
 import { api, ApiError } from '../lib/api'
 import { Project, Organization, ProviderOperation } from '../lib/types'
@@ -53,6 +54,7 @@ export function ProjectsPage() {
   useEffect(() => {
     if (accountOnly) void load(orgId || undefined)
   }, [accountOnly, load, orgId])
+  useOnReconnect(() => void load(orgId || undefined))
 
   async function createProject() {
     if (!newName.trim()) return

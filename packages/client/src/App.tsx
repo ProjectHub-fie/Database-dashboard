@@ -3,6 +3,7 @@ import { useAuth } from './contexts/AuthContext'
 import { AppShell } from './components/AppShell'
 import { ErrorBoundary } from './components/ui'
 import { PageLoader } from './components/loaders/PageLoader'
+import { ReconnectOverlay } from './components/ReconnectOverlay'
 import { LoginPage } from './pages/LoginPage'
 import { OverviewPage } from './pages/OverviewPage'
 import { DataBrowserPage } from './pages/DataBrowserPage'
@@ -89,7 +90,10 @@ function RequireConnection({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
-    <Routes>
+    <>
+      {/* Above the router: an outage must not unmount the page underneath. */}
+      <ReconnectOverlay />
+      <Routes>
       {/* Both URLs render the same three-mode entry screen; /connect is kept so
           existing links and bookmarks keep working. */}
       <Route
@@ -135,6 +139,7 @@ export default function App() {
           </RequireConnection>
         }
       />
-    </Routes>
+      </Routes>
+    </>
   )
 }

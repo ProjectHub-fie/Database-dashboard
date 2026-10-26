@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useToast } from '../contexts/ToastContext'
 import { useAuth } from '../contexts/AuthContext'
+import { useOnReconnect } from '../contexts/NetworkContext'
 import { api, ApiError } from '../lib/api'
 import { SchemaTree, TableInfo, RowPage } from '../lib/types'
 import {
@@ -63,7 +64,8 @@ export function DataBrowserPage() {
 
   const readOnly = auth.connection?.metadata?.readOnly === true || auth.connection?.accountOnly === true
 
-  useEffect(() => {
+  const loadTree = useCallback(() => {
+    setTreeState((prev) => (prev === 'ready' ? prev : 'loading'))
     api
       .get<{ tree: SchemaTree }>('/api/data/tree')
       .then((res) => {
@@ -75,6 +77,9 @@ export function DataBrowserPage() {
         setTreeError(err instanceof ApiError ? err.message : 'Could not load schema tree')
       })
   }, [])
+
+  useEffect(loadTree, [loadTree])
+  useOnReconnect(loadTree)
 
   const [schema, table] = tableRef.split('.')
 
