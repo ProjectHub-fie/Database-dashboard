@@ -61,6 +61,10 @@ describe('vercel api proxy', () => {
 
     expect(res.statusCode).toBe(503)
     expect(JSON.parse(body()).error.code).toBe('API_ORIGIN_LOOP')
+    // The message must name the rejected host: without it, "still broken" gives
+    // the operator nothing to go on, since a stale localhost value and a loop
+    // back to this alias need completely different fixes.
+    expect(JSON.parse(body()).error.message).toContain('dbremote.vercel.app')
     // The loop must be stopped before any outbound request is attempted.
     expect(fetchSpy).not.toHaveBeenCalled()
   })

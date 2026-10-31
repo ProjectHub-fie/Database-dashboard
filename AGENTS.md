@@ -216,3 +216,13 @@ implemented provider. Build commands:
   flakiness never flashes a full-screen overlay, and the `epoch` counter makes
   an in-flight probe abandon its result when real traffic has already settled
   the question. `link.test.ts` covers each transition.
+
+- **The provider selector starts on "Choose a provider", never on a default.**
+  Auto-selecting the only registered provider made the field easy to skip, and a
+  connection opened against the wrong engine looks identical to a successful one
+  until the data does not match. `providerId` starts as `NO_PROVIDER` and
+  `reconcileProviderSelection()` clears a stale choice instead of substituting
+  the first available entry; submit and "Test connection" both gate on
+  `supportsAuthMethod`, which is false for the placeholder. If you add a
+  provider, do not "help" by preselecting it — `provider-catalog.test.ts` pins
+  the placeholder contract.
