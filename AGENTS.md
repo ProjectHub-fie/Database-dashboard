@@ -226,3 +226,14 @@ implemented provider. Build commands:
   `supportsAuthMethod`, which is false for the placeholder. If you add a
   provider, do not "help" by preselecting it — `provider-catalog.test.ts` pins
   the placeholder contract.
+
+- **`fetch` decodes gzip but keeps `content-encoding` — never forward it.** The
+  Vercel proxy buffers `await upstreamRes.arrayBuffer()`, which undici has
+  already decompressed, so any upstream behind a compressing CDN (Render,
+  Cloudflare) hands back plain bytes with `content-encoding: gzip` still on the
+  headers. Copying headers verbatim made the browser gunzip plain JSON, every
+  `/api` response failed to parse, and the UI reported `HTTP 0 · NETWORK` on
+  connect while `curl` to the API host looked perfectly healthy. Only appears
+  once `API_ORIGIN` points at a real CDN-fronted host: local Express sends no
+  `content-encoding`, so dev never reproduces it. `vercel-proxy.test.ts` pins
+  the strip, and `content-length` must describe the decoded bytes.

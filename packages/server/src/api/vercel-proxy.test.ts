@@ -245,3 +245,33 @@ describe('vercel api proxy failover', () => {
     expect(JSON.parse(body()).error.code).toBe('UPSTREAM_UNAVAILABLE')
   })
 })
+/**
+ * `fetch` (undici) decompresses the upstream body but leaves the
+ * `content-encoding` header in place. Forwarding that header with the decoded
+ * bytes tells the browser to gunzip plain JSON, so every response through the
+ * proxy fails to parse — which the UI reports as `HTTP 0 · NETWORK`.
+ *
+ * This only appears once API_ORIGIN points at a real host behind a compressing
+ * CDN (Render/Cloudflare). A local Express origin sends no content-encoding, so
+ * dev and the previous loop-guard era never exercised it.
+ */
+describe('vercel api proxy response decoding', () => {
+  it('does not forward content-encoding for a body fetch already decoded', async () => {
+    vi.stubEnv('API_ORIGIN', 'https://api.example.com')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('{"providers":[]}', {
+        status: 200,
+        headers: { 'content-type': 'application/json', 'content-encoding': 'gzip' },
+      }),
+    )
+    const handler = await loadHandler()
+    const { res, headers } = makeRes()
+
+    await handler(makeReq({ host: 'dbremote.vercel.app' }), res)
+
+    expect(headers['content-encoding']).toBeUndefined()
+    expect(headers['content-type']).toBe('application/json')
+    // Length must describe the bytes actually written, not the encoded size.
+    expect(headers['content-length']).toBe(String('{"providers":[]}'.length))
+  })
+})
