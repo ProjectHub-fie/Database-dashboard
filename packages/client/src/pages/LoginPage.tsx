@@ -6,7 +6,12 @@ import { useTheme } from '../contexts/ThemeContext'
 import { Button, Input, Label, Badge, Spinner } from '../components/ui'
 import { api, ApiError } from '../lib/api'
 import { ConnectionStatus, ProviderCatalogEntry } from '../lib/types'
-import { resolveCatalog, supportsAuthMethod, catalogIssueMessage } from '../lib/provider-catalog'
+import {
+  resolveCatalog,
+  supportsAuthMethod,
+  catalogIssueMessage,
+  reconcileProviderSelection,
+} from '../lib/provider-catalog'
 import { Footer } from '../components/Footer'
 import { ApiUnreachableBanner } from '../components/ApiUnreachableBanner'
 import { GoToTop } from '../components/GoToTop'
@@ -98,7 +103,10 @@ export function LoginPage() {
 
   const [providers, setProviders] = useState<ProviderCatalogEntry[] | null>(null)
   const [catalogIssue, setCatalogIssue] = useState<string | null>(null)
-  const [providerId, setProviderId] = useState('neon')
+  // Starts empty so the selector opens on "Choose a provider". Preselecting the
+  // only registered provider made it easy to miss which engine a connection was
+  // being opened against; now the choice is deliberate and gates the submit.
+  const [providerId, setProviderId] = useState('')
 
   const loadProviders = useCallback(() => {
     setCatalogIssue(null)
@@ -106,15 +114,12 @@ export function LoginPage() {
       .get<{ providers: ProviderCatalogEntry[] }>('/api/providers')
       .then((r) => {
         setProviders(r.providers)
-        const usable = r.providers.find((p) => p.available)
-        if (usable) {
-          setProviderId((current) => (r.providers.some((p) => p.id === current && p.available) ? current : usable.id))
-        }
+        setProviderId((current) => reconcileProviderSelection(current, r.providers))
       })
       .catch((err: unknown) => {
         // A catalog failure must not blank the selector: the form would become
-        // unusable even though the API accepts the provider it already defaults
-        // to. Fall back to the single enabled provider and say so.
+        // unusable even though the API accepts the one provider it can serve.
+        // Fall back to Neon as an option and say why the list is short.
         setProviders(null)
         setCatalogIssue(catalogIssueMessage(err instanceof ApiError ? err.code : undefined))
       })
@@ -498,6 +503,7 @@ function ProviderField({
 
   const usable = providers.filter((p) => p.available && p.authMethods.includes(authMethod))
   const planned = providers.filter((p) => !p.available)
+  const unset = !value
 
   return (
     <div>
@@ -506,16 +512,34 @@ function ProviderField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         aria-label="Connection provider"
-        className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+        className={`h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-900 ${
+          unset ? 'text-slate-400 dark:text-slate-500' : 'text-slate-800 dark:text-slate-200'
+        }`}
       >
-        {usable.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name}
-            {p.controlPlane && authMethod === 'api' ? ' — control plane' : ''}
-          </option>
-        ))}
-        {usable.length === 0 && <option value="">No provider supports this mode yet</option>}
+        {usable.length > 0 ? (
+          <>
+            {/* Placeholder, not a default: the operator must name the engine.
+                `disabled` keeps it out of the list once a real choice is made,
+                while still rendering as the current value at value="". */}
+            <option value="" disabled>
+              Choose a provider
+            </option>
+            {usable.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+                {p.controlPlane && authMethod === 'api' ? ' — control plane' : ''}
+              </option>
+            ))}
+          </>
+        ) : (
+          <option value="">No provider supports this mode yet</option>
+        )}
       </select>
+      {unset && usable.length > 0 && (
+        <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+          Choose a provider to continue.
+        </p>
+      )}
       {catalogIssue && (
         <p className="mt-1.5 text-[11px] leading-relaxed text-amber-700 dark:text-amber-400">
           {catalogIssue}{' '}
@@ -664,7 +688,7 @@ function UrlPanel(props: {
             <button
               type="button"
               onClick={props.onTest}
-              disabled={props.testing}
+              disabled={props.testing || !props.supported}
               className="mb-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 underline-offset-2 hover:text-slate-900 hover:underline disabled:opacity-50 dark:text-slate-400 dark:hover:text-white"
             >
               {props.testing ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
@@ -710,8 +734,8 @@ function UrlPanel(props: {
           </div>
         )}
 
-        {!props.supported && (
-          <p className="rounded-lg border border-slate-200 px-3 py-2 text-[12px] text-slate-600 dark:border-slate-700 dark:text-slate-400">
+        {!props.supported && props.providerId && (
+          <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50/60 px-3 py-2 text-[12px] text-slate-600 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-400">
             The selected provider does not support direct database URLs.
           </p>
         )}
@@ -836,8 +860,8 @@ function ApiPanel(props: {
           </div>
         )}
 
-        {!props.supported && (
-          <p className="rounded-lg border border-slate-200 px-3 py-2 text-[12px] text-slate-600 dark:border-slate-700 dark:text-slate-400">
+        {!props.supported && props.providerId && (
+          <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50/60 px-3 py-2 text-[12px] text-slate-600 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-400">
             The selected provider does not support API-key mode.
           </p>
         )}

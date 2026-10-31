@@ -159,11 +159,17 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return true
   })
   if (!usable.length) {
+    // Name the rejected host. Without it the operator cannot tell which of a
+    // stale localhost value, a loop back to this alias, or a missing variable
+    // they are looking at — and every one of those needs a different fix. The
+    // hostname is server-side configuration, not a credential, and it is the
+    // offending value itself that has to change.
+    const rejected = origins.map((o) => new URL(o).host).join(' and ')
     sendJson(
       res,
       503,
       'API_ORIGIN_LOOP',
-      'API_ORIGIN points at a serverless or self-referential host. Set it to the URL of the persistent DB Remote API server.',
+      `API_ORIGIN is "${rejected}", which is this deployment, a serverless host, or loopback — none of those can serve the persistent DB Remote API. Point API_ORIGIN at the public URL of the host running the Express server (see docs/OPERATIONS.md).`,
     )
     return
   }

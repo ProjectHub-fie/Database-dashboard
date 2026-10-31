@@ -48,6 +48,26 @@ export function supportsAuthMethod(
   return entry?.authMethods.includes(method) ?? false
 }
 
+/**
+ * The value of an untouched provider selector. The forms render this as a
+ * disabled "Choose a provider" placeholder, so the engine is never implied: a
+ * connection opened against the wrong provider looks identical to a successful
+ * one until data does not match.
+ */
+export const NO_PROVIDER = ''
+
+/**
+ * Which provider stays selected after the catalog loads or reloads.
+ *
+ * A missing or no-longer-available provider clears back to the placeholder
+ * instead of falling through to the first available engine. Auto-selecting was
+ * the original behaviour and it quietly substituted a different provider for
+ * the one the operator had in mind.
+ */
+export function reconcileProviderSelection(current: string, catalog: ProviderCatalogEntry[]): string {
+  return current && catalog.some((p) => p.id === current && p.available) ? current : NO_PROVIDER
+}
+
 /** Message for a catalog failure, distinguishing a misconfigured deployment. */
 export function catalogIssueMessage(errorCode: string | undefined): string {
   return errorCode === 'API_NOT_CONFIGURED'
