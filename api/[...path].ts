@@ -249,8 +249,14 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   if (servedBy) res.setHeader('x-dbh-origin', servedBy)
 
   upstreamRes.headers.forEach((value, key) => {
-    if (key.toLowerCase() === 'set-cookie') return
-    if (HOP_BY_HOP.has(key.toLowerCase())) return
+    const name = key.toLowerCase()
+    if (name === 'set-cookie') return
+    if (HOP_BY_HOP.has(name)) return
+    // `fetch` decompresses the upstream body but keeps this header. Forwarding
+    // it makes the browser try to gunzip bytes that are already plain, so the
+    // response is unreadable and the client reports `HTTP 0 · NETWORK`. The
+    // body below is buffered decoded, so the encoding no longer applies.
+    if (name === 'content-encoding') return
     res.setHeader(key, value)
   })
   const cookies = upstreamRes.headers.getSetCookie?.() ?? []
