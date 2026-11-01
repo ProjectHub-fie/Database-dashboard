@@ -38,7 +38,12 @@ function clientApiPaths(): string[] {
   const found = new Set<string>()
   for (const file of walk(clientSrc)) {
     const source = readFileSync(file, 'utf8')
-    for (const match of source.matchAll(/['"`](\/api\/[A-Za-z0-9/_.:${}-]*)/g)) {
+    // `${...}` interpolations may themselves contain `/` (e.g.
+    // `${encodeURIComponent(projectId)}`), so they are consumed as a unit
+    // before being replaced. A character class that stops at `$` silently
+    // truncated every interpolated path to its static prefix, which meant this
+    // test never checked the routes the client actually calls most often.
+    for (const match of source.matchAll(/['"`](\/api\/(?:[A-Za-z0-9/_.:-]|\$\{[^}]*\})*)/g)) {
       // Route params are opaque to this test; any non-empty value matches the
       // same route shape.
       found.add(match[1]!.replace(/\$\{[^}]*\}/g, 'sample').replace(/\/$/, ''))

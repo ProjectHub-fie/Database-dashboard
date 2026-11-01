@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useOnReconnect } from '../contexts/NetworkContext'
 import { useToast } from '../contexts/ToastContext'
 import { api, ApiError } from '../lib/api'
-import { Project, Branch, Database, ProviderOperation } from '../lib/types'
+import { Project, Branch, Database, DatabaseRole, ProviderOperation } from '../lib/types'
 import { Button, Card, Badge, EmptyState, Input, Label, Select, Modal, ConfirmDialog, Skeleton } from '../components/ui'
 import { Layers, Plus, Trash2, Server, Copy, Plug, PlugZap } from 'lucide-react'
 import { capabilitiesOf } from '../lib/capabilities'
@@ -31,6 +31,14 @@ export function DatabasesPage() {
   const [connInfo, setConnInfo] = useState<{ displayName: string; host: string; port: number; database: string; role: string } | null>(null)
   const [copyText, setCopyText] = useState('')
   const [attaching, setAttaching] = useState<string | null>(null)
+  // Attach dialog: a role must be chosen explicitly, because `connection_uri`
+  // requires one and silently defaulting to the owner role would open a
+  // higher-privileged session than the operator asked for.
+  const [attachTarget, setAttachTarget] = useState<Database | null>(null)
+  const [roles, setRoles] = useState<DatabaseRole[]>([])
+  const [rolesState, setRolesState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [rolesError, setRolesError] = useState<string | null>(null)
+  const [selectedRole, setSelectedRole] = useState('')
   const nav = useNavigate()
 
   const capabilities = capabilitiesOf(auth.connection)
@@ -120,21 +128,51 @@ export function DatabasesPage() {
       ? auth.connection.metadata?.database
       : undefined
 
+  /** Load the branch's roles and open the attach dialog for a database. */
+  async function openAttach(db: Database) {
+    setAttachTarget(db)
+    setSelectedRole('')
+    setRoles([])
+    setRolesError(null)
+    setRolesState('loading')
+    try {
+      const r = await api.get<{ roles: DatabaseRole[] }>(
+        `/api/control/projects/${encodeURIComponent(db.projectId)}/roles`,
+        { branchId: db.branchId },
+      )
+      setRoles(r.roles)
+      // Preselect the database owner when it is a usable password role: that is
+      // the role that actually owns the objects, so it is the least surprising
+      // choice — but it still requires a click, never a silent default.
+      const usable = r.roles.filter((role) => !role.authenticationMethod || role.authenticationMethod === 'password')
+      const owner = usable.find((role) => role.name === db.owner)
+      setSelectedRole(owner?.name ?? (usable.length === 1 ? usable[0].name : ''))
+      setRolesState('ready')
+    } catch (err) {
+      setRolesState('error')
+      setRolesError(err instanceof ApiError ? err.message : 'Could not load roles for this branch')
+    }
+  }
+
   /**
    * Open a real SQL session for this database using the API key that is already
    * on the server. The credential never crosses to the browser: the server asks
    * Neon for a URI, verifies and pins the host, and returns metadata only.
    */
-  async function useDatabase(db: Database) {
+  async function attachDatabase() {
+    const db = attachTarget
+    if (!db || !selectedRole) return
     setAttaching(db.name)
     try {
       await api.post('/api/connections/database', {
         projectId: db.projectId,
         branchId: db.branchId,
         databaseName: db.name,
+        role: selectedRole,
       })
       await auth.reloadConnection()
-      toast('success', `Connected to ${db.name}`, 'Data, SQL and schema tools are now available.')
+      toast('success', `Connected to ${db.name}`, `Session role: ${selectedRole}. Data, SQL and schema tools are now available.`)
+      setAttachTarget(null)
       nav('/overview')
     } catch (err) {
       toast('error', err instanceof ApiError ? err.message : 'Could not open a database connection')
@@ -211,7 +249,7 @@ export function DatabasesPage() {
                     variant={attachedDatabase === d.name ? 'secondary' : 'primary'}
                     loading={attaching === d.name}
                     disabled={Boolean(attaching) || attachedDatabase === d.name}
-                    onClick={() => void useDatabase(d)}
+                    onClick={() => void openAttach(d)}
                     title="Open a SQL session on this database with the API key"
                   >
                     {attachedDatabase === d.name ? (
@@ -276,6 +314,65 @@ export function DatabasesPage() {
           <Input value={confirmText} onChange={(e) => setConfirmText(e.target.value)} placeholder={deleteTarget?.name ?? ''} autoComplete="off" />
         </div>
       </ConfirmDialog>
+
+      <Modal
+        open={Boolean(attachTarget)}
+        onClose={() => setAttachTarget(null)}
+        title={`Connect to ${attachTarget?.name ?? ''}`}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setAttachTarget(null)}>Cancel</Button>
+            <Button
+              loading={attaching === attachTarget?.name}
+              disabled={!selectedRole || rolesState !== 'ready'}
+              onClick={() => void attachDatabase()}
+            >
+              <Plug className="h-3.5 w-3.5" /> Connect
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-[12.5px] text-slate-500 dark:text-slate-400">
+            The dashboard asks Neon for a connection URI for the database and role you pick. The
+            credential stays on the server; permissions come from the role you choose here.
+          </p>
+          <div>
+            <Label>Role</Label>
+            {rolesState === 'loading' && <Skeleton className="h-9 w-full" />}
+            {rolesState === 'error' && (
+              <div className="space-y-2">
+                <p className="text-[12.5px] text-rose-600 dark:text-rose-400">{rolesError}</p>
+                <Button size="sm" variant="secondary" onClick={() => attachTarget && void openAttach(attachTarget)}>Retry</Button>
+              </div>
+            )}
+            {rolesState === 'ready' && roles.length === 0 && (
+              <EmptyState title="No roles on this branch" description="Create a role in the Neon console, then retry." />
+            )}
+            {rolesState === 'ready' && roles.length > 0 && (
+              <>
+                <Select value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)}>
+                  <option value="" disabled>Choose a role</option>
+                  {roles.map((r) => {
+                    const unusable = Boolean(r.authenticationMethod && r.authenticationMethod !== 'password')
+                    return (
+                      <option key={r.name} value={r.name} disabled={unusable}>
+                        {r.name}
+                        {unusable ? ` (${r.authenticationMethod} — no password)` : ''}
+                        {r.protected ? ' (protected)' : ''}
+                      </option>
+                    )
+                  })}
+                </Select>
+                <p className="mt-1 text-[11px] text-slate-400">
+                  Roles without password authentication cannot open a SQL session. Reset a role's
+                  password in the Neon console to make it usable.
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      </Modal>
 
       <Modal open={Boolean(connInfo)} onClose={() => setConnInfo(null)} title="Connection info">
         {connInfo ? (

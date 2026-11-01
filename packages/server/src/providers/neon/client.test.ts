@@ -100,3 +100,55 @@ describe('NeonControlPlane.listOrganizations', () => {
     await expect(new NeonControlPlane('napi_org', http).listOrganizations()).resolves.toEqual([])
   })
 })
+
+/**
+ * Roles are branch-scoped in Neon: `GET /projects/{id}/branches/{bid}/roles`.
+ * The attach flow needs the real list because `connection_uri` requires a
+ * `role_name` and gives no way to discover one.
+ */
+describe('NeonControlPlane.listRoles', () => {
+  it('lists roles for the given branch and normalizes authentication_method', async () => {
+    const { http, calls } = fakeHttp({
+      '/projects/p1/branches/br-1/roles': () => ({
+        roles: [
+          { name: 'neondb_owner', branch_id: 'br-1', protected: false, authentication_method: 'password' },
+          { name: 'app_reader', branch_id: 'br-1', protected: false, authentication_method: 'password' },
+          { name: 'ci_nologin', branch_id: 'br-1', protected: true, authentication_method: 'no_login' },
+        ],
+      }),
+    })
+    const roles = await new NeonControlPlane('napi_x', http).listRoles({ projectId: 'p1', branchId: 'br-1' })
+
+    expect(calls).toEqual(['GET /projects/p1/branches/br-1/roles'])
+    expect(roles.map((r) => r.name)).toEqual(['neondb_owner', 'app_reader', 'ci_nologin'])
+    expect(roles[0].authenticationMethod).toBe('password')
+    // The passwordless role must be distinguishable so the UI can refuse it.
+    expect(roles[2].authenticationMethod).toBe('no_login')
+    expect(roles[2].protected).toBe(true)
+  })
+
+  it('defaults branchId from the request when the API omits it', async () => {
+    const { http } = fakeHttp({
+      '/projects/p1/branches/br-9/roles': () => ({ roles: [{ name: 'r' }] }),
+    })
+    const roles = await new NeonControlPlane('napi_x', http).listRoles({ projectId: 'p1', branchId: 'br-9' })
+    expect(roles[0].branchId).toBe('br-9')
+  })
+
+  it('returns an empty list rather than throwing when a branch has no roles', async () => {
+    const { http } = fakeHttp({ '/projects/p1/branches/br-2/roles': () => ({}) })
+    await expect(
+      new NeonControlPlane('napi_x', http).listRoles({ projectId: 'p1', branchId: 'br-2' }),
+    ).resolves.toEqual([])
+  })
+
+  it('never puts the role password in the normalized output', async () => {
+    const { http } = fakeHttp({
+      '/projects/p1/branches/br-1/roles': () => ({
+        roles: [{ name: 'neondb_owner', branch_id: 'br-1', authentication_method: 'password', password: 'super-secret' }],
+      }),
+    })
+    const roles = await new NeonControlPlane('napi_x', http).listRoles({ projectId: 'p1', branchId: 'br-1' })
+    expect(JSON.stringify(roles)).not.toContain('super-secret')
+  })
+})

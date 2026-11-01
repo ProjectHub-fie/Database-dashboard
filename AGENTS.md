@@ -237,3 +237,41 @@ implemented provider. Build commands:
   once `API_ORIGIN` points at a real CDN-fronted host: local Express sends no
   `content-encoding`, so dev never reproduces it. `vercel-proxy.test.ts` pins
   the strip, and `content-length` must describe the decoded bytes.
+
+- **Neon roles are branch-scoped, and the list endpoint returns a password.**
+  `GET /projects/{id}/branches/{bid}/roles` (not `/projects/{id}/roles`; verified
+  against the published OpenAPI spec). Two consequences. First, a role name is
+  only meaningful with the branch it came from, so the roles route requires
+  `branchId` and never defaults to the primary branch — defaulting would offer a
+  role that does not exist on the branch the operator picked. Second, the `Role`
+  schema marks `password` as sensitive and the response can include it, so
+  `normalizeRole()` deliberately drops `raw` and copies only the fields the UI
+  needs. Keeping `raw` (the pattern every other normalizer uses) put the role
+  password in an API response — the exact credential the dashboard keeps
+  server-side. `client.test.ts` asserts the password never appears in the
+  normalized output.
+
+- **`connection_uri` accepts any `role_name` and fails later, so validate first.**
+  A wrong role, or a role with `authentication_method` `no_login`/`oauth` (no
+  password), produces an opaque authentication failure at connect time or a URI
+  with an empty password. `POST /api/connections/database` now checks the role
+  against the branch's real roles and rejects passwordless roles up front, with
+  a message that says how to fix it. A URI that comes back without a password is
+  also rejected explicitly instead of being handed to `pg`.
+
+- **`readOnly` must come from the same set the UI labels with.**
+  `PgQuerySession.readOnly` compared `conn.role === 'readonly'` while
+  `connections-router` labelled sessions using the shared `readOnlyRoles` set.
+  Any other read-only name (`readonly_user`, `ro`, `analyst`, `reporting`) got a
+  read-only badge in the UI but was still allowed to insert/update/delete
+  through the API. Both now use `readOnlyRoles`; `query-session.test.ts` pins
+  that the refusal happens before the adapter is reached. The guard throws
+  synchronously (the methods are not `async`), so tests must not use
+  `rejects.toMatchObject`.
+
+- **`client-routes.test.ts` extracts client paths with a regex — keep `${...}` intact.**
+  The character class stopped at `$`, so every interpolated path
+  (`/api/control/projects/${encodeURIComponent(id)}/roles`) was silently
+  truncated to its static prefix and never checked. That is most of the routes
+  the client actually calls. The pattern now consumes `${...}` as a unit and the
+  test discovers ~48 paths instead of ~20.

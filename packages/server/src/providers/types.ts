@@ -43,6 +43,7 @@ export type Capability =
   | 'control.createBranch'
   | 'control.deleteBranch'
   | 'control.listDatabases'
+  | 'control.listRoles'
   | 'control.createDatabase'
   | 'control.deleteDatabase'
   | 'control.listEndpoints'
@@ -154,6 +155,22 @@ export interface Endpoint {
   region?: string
   state: string
   type?: string
+  raw?: unknown
+}
+
+/**
+ * A Postgres role as reported by the provider control plane (Neon:
+ * `GET /projects/{id}/branches/{bid}/roles`). `authenticationMethod` matters
+ * for connection setup: a role with `no_login` or `oauth` has no password, so
+ * it cannot be used to open a password-authenticated session even though it
+ * exists.
+ */
+export interface DatabaseRole {
+  name: string
+  branchId: string
+  protected?: boolean
+  authenticationMethod?: string
+  createdAt?: string
   raw?: unknown
 }
 
@@ -523,6 +540,14 @@ export interface ControlPlaneAdapter {
   listDatabases(input: { projectId: string; branchId: string }): Promise<Database[]>
   createDatabase(input: { projectId: string; branchId: string; name: string; owner?: string }): Promise<{ database: Database; operation?: ProviderOperation }>
   deleteDatabase(input: { projectId: string; branchId: string; databaseName: string }): Promise<{ operation?: ProviderOperation }>
+
+  /**
+   * Postgres roles on a branch. Roles are branch-scoped in Neon, so this is the
+   * only way to offer a real role choice when opening a database session: the
+   * `connection_uri` endpoint requires `role_name` and would otherwise be left
+   * to guess.
+   */
+  listRoles?(input: { projectId: string; branchId: string }): Promise<DatabaseRole[]>
 
   listEndpoints(input: { projectId: string }): Promise<Endpoint[]>
   getConnectionInfo(input: { projectId: string; databaseName: string; branchId?: string; role?: string }): Promise<ProjectConnectionInfo>

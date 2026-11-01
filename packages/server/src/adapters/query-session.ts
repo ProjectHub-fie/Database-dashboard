@@ -15,6 +15,7 @@ import {
 } from '../providers/types.js'
 import { PostgresAdapter, PgConn } from './postgres.js'
 import { AppError } from '../lib/errors.js'
+import { readOnlyRoles } from '../security/roles.js'
 
 const { Pool } = pg
 
@@ -54,7 +55,11 @@ export class PgQuerySession implements QuerySession {
   }
 
   get readOnly(): boolean {
-    return this.conn.role === 'readonly' // readOnly is role-derived, never a UI toggle
+    // Role-derived, never a UI toggle. Uses the shared set so a connection the
+    // dashboard labels read-only (e.g. `readonly_user`) is also refused writes
+    // server-side; comparing against the single literal 'readonly' let the UI
+    // hide write actions while the API still accepted them.
+    return readOnlyRoles.has(this.conn.role.toLowerCase())
   }
 
   async execute(input: { sql: string; params?: readonly unknown[] }, o?: SqlExecutionOptions): Promise<QueryResult> {

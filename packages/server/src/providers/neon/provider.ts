@@ -48,6 +48,7 @@ const NEON_CAPABILITIES: ReadonlySet<Capability> = new Set<Capability>([
   'control.createBranch',
   'control.deleteBranch',
   'control.listDatabases',
+  'control.listRoles',
   'control.createDatabase',
   'control.deleteDatabase',
   'control.listEndpoints',

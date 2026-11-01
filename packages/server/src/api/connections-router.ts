@@ -231,6 +231,28 @@ export function connectionsRouter(): Router {
       })
     }
 
+    // `connection_uri` accepts any role_name and fails later with an opaque
+    // auth error, so validate against the branch's real roles first. This also
+    // rejects passwordless roles (no_login/oauth) here, where the message can
+    // say how to fix it, instead of at connect time.
+    if (body.role && typeof cp.listRoles === 'function') {
+      const roles = await cp.listRoles({ projectId: body.projectId, branchId: body.branchId })
+      const match = roles.find((r) => r.name === body.role)
+      if (!match) {
+        throw new AppError({
+          code: 'BAD_REQUEST',
+          message: `Role '${body.role}' does not exist on the selected branch.`,
+          detail: `roles on ${body.branchId}: ${roles.map((r) => r.name).join(', ')}`,
+        })
+      }
+      if (match.authenticationMethod && match.authenticationMethod !== 'password') {
+        throw new AppError({
+          code: 'BAD_REQUEST',
+          message: `Role '${match.name}' authenticates with '${match.authenticationMethod}', so it has no password and cannot open a SQL session. Choose a password role, or reset this role's password in the Neon console (Roles → Reset password).`,
+        })
+      }
+    }
+
     const provider = ctx.registry.require(p.providerId) as NeonProvider
     const uri = await cp.getConnectionUri({
       projectId: body.projectId,
@@ -248,6 +270,12 @@ export function connectionsRouter(): Router {
     })
     const password = new URL(uri).password
     const decodedPass = password ? decodeURIComponent(password) : ''
+    if (!decodedPass) {
+      throw new AppError({
+        code: 'PROVIDER_ERROR',
+        message: `Neon returned a connection URI without a password for role '${verified.role}'. Reset that role's password in the Neon console (Roles → Reset password) and connect again.`,
+      })
+    }
 
     const connRef = await providerConnectWithUrl(provider, {
       host: verified.host,
