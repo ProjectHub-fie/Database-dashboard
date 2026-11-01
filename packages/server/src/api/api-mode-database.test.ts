@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, vi } from 'vitest'
+import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest'
 import type { Express } from 'express'
 import supertest from 'supertest'
 import { makeTestApp, seedUser, login, MockNeonHttpClient } from '../test/test-app.js'
@@ -255,6 +255,115 @@ describe('API-key mode: attaching a database', () => {
     expect(projects.status).toBe(200)
     const tree = await agent.get('/api/data/tree')
     expect(tree.body.error.code).toBe('FEATURE_UNAVAILABLE')
+  })
+
+  /**
+   * `connection_uri` takes `role_name` and fails later with an opaque auth
+   * error for anything it does not like, so the attach route validates the
+   * choice against the branch's real roles first.
+   */
+  describe('role selection', () => {
+    // `connectCalls` is shared across the file; without this the assertions
+    // below would read a connection opened by an earlier test.
+    beforeEach(() => {
+      connectCalls.length = 0
+    })
+
+    const ROLES = {
+      roles: [
+        { name: 'neondb_owner', branch_id: 'br-main', protected: false, authentication_method: 'password' },
+        { name: 'app_reader', branch_id: 'br-main', protected: false, authentication_method: 'password' },
+        { name: 'ci_nologin', branch_id: 'br-main', protected: true, authentication_method: 'no_login' },
+      ],
+    }
+
+    it('opens the session as the requested role', async () => {
+      neon._setHandler('GET', '/projects/:projectId/branches/:branchId/roles', () => ROLES)
+      neon._setHandler('GET', '/projects/:projectId/connection_uri', () => ({
+        uri: 'postgresql://app_reader:reader-secret@ep-attach-123.us-east-2.aws.neon.tech/neondb?sslmode=require',
+      }))
+      const { agent, csrfToken } = await connectedAgent()
+
+      const res = await agent.post(
+        '/api/connections/database',
+        { projectId: 'proj-1', branchId: 'br-main', databaseName: 'neondb', role: 'app_reader' },
+        csrfToken,
+      )
+
+      expect(res.status).toBe(200)
+      expect(res.body.metadata.role).toBe('app_reader')
+      expect(connectCalls[0]!.password).toBe('reader-secret')
+      expect(JSON.stringify(res.body)).not.toContain('reader-secret')
+    })
+
+    it('rejects a role that does not exist on the branch before calling connection_uri', async () => {
+      neon._setHandler('GET', '/projects/:projectId/branches/:branchId/roles', () => ROLES)
+      const { agent, csrfToken } = await connectedAgent()
+
+      const res = await agent.post(
+        '/api/connections/database',
+        { projectId: 'proj-1', branchId: 'br-main', databaseName: 'neondb', role: 'ghost_role' },
+        csrfToken,
+      )
+
+      expect(res.status).toBe(400)
+      expect(res.body.error.code).toBe('BAD_REQUEST')
+      expect(res.body.error.message).toContain('ghost_role')
+      expect(connectCalls).toHaveLength(0)
+      // No half-open session left behind.
+      const status = await agent.get('/api/connections/status')
+      expect(status.body.accountOnly).toBe(true)
+    })
+
+    it('refuses a passwordless role and explains how to fix it', async () => {
+      neon._setHandler('GET', '/projects/:projectId/branches/:branchId/roles', () => ROLES)
+      const { agent, csrfToken } = await connectedAgent()
+
+      const res = await agent.post(
+        '/api/connections/database',
+        { projectId: 'proj-1', branchId: 'br-main', databaseName: 'neondb', role: 'ci_nologin' },
+        csrfToken,
+      )
+
+      expect(res.status).toBe(400)
+      expect(res.body.error.message).toContain('no_login')
+      // The message has to tell the operator what to do next.
+      expect(res.body.error.message.toLowerCase()).toContain('reset')
+      expect(connectCalls).toHaveLength(0)
+    })
+
+    it('reports an actionably when the URI comes back without a password', async () => {
+      neon._setHandler('GET', '/projects/:projectId/branches/:branchId/roles', () => ROLES)
+      neon._setHandler('GET', '/projects/:projectId/connection_uri', () => ({
+        uri: 'postgresql://app_reader@ep-attach-123.us-east-2.aws.neon.tech/neondb',
+      }))
+      const { agent, csrfToken } = await connectedAgent()
+
+      const res = await agent.post(
+        '/api/connections/database',
+        { projectId: 'proj-1', branchId: 'br-main', databaseName: 'neondb', role: 'app_reader' },
+        csrfToken,
+      )
+
+      expect(res.status).toBeGreaterThanOrEqual(400)
+      expect(res.body.error.message.toLowerCase()).toContain('password')
+      expect(connectCalls).toHaveLength(0)
+    })
+
+    it('still attaches without a role when the provider list is unavailable', async () => {
+      // Backward compatible: an older/limited provider that cannot list roles
+      // must not be blocked from the flow that already worked.
+      neon._setHandler('GET', '/projects/:projectId/connection_uri', () => ({ uri: NEON_URI }))
+      const { agent, csrfToken } = await connectedAgent()
+
+      const res = await agent.post(
+        '/api/connections/database',
+        { projectId: 'proj-1', branchId: 'br-main', databaseName: 'neondb' },
+        csrfToken,
+      )
+      expect(res.status).toBe(200)
+      expect(res.body.metadata.role).toBe('neondb_owner')
+    })
   })
 
   it('is not reachable without a dashboard session', async () => {

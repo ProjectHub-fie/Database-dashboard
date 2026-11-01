@@ -179,6 +179,26 @@ export function controlPlaneRouter(): Router {
     res.json({ databases })
   })
 
+  // GET /api/control/projects/:projectId/roles?branchId=
+  //
+  // Roles are branch-scoped, so `branchId` is required rather than defaulted:
+  // silently listing the primary branch's roles would offer a role that does
+  // not exist on the branch the operator actually picked.
+  router.get('/projects/:projectId/roles', async (req: Request, res: Response) => {
+    const { cp } = control(req, res)
+    const projectId = String(req.params.projectId)
+    const branchId = req.query.branchId ? String(req.query.branchId) : ''
+    if (!branchId) throw new AppError({ code: 'BAD_REQUEST', message: 'branchId is required' })
+    if (typeof cp.listRoles !== 'function') {
+      throw new AppError({
+        code: 'NOT_IMPLEMENTED',
+        message: 'This provider does not expose database roles.',
+      })
+    }
+    const roles = await cp.listRoles({ projectId, branchId })
+    res.json({ roles })
+  })
+
   // POST /api/control/projects/:projectId/databases
   router.post('/projects/:projectId/databases', async (req: Request, res: Response) => {
     const { ctx, sessionRef, cp } = control(req, res)

@@ -82,6 +82,14 @@ export interface Database {
   createdAt?: string
 }
 
+export interface DatabaseRole {
+  name: string
+  branchId: string
+  protected?: boolean
+  authenticationMethod?: string
+  createdAt?: string
+}
+
 export interface Endpoint {
   id: string
   branchId: string

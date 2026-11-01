@@ -2,6 +2,7 @@ import {
   Branch,
   ControlPlaneAdapter,
   Database,
+  DatabaseRole,
   Endpoint,
   Organization,
   Project,
@@ -361,6 +362,20 @@ export class NeonControlPlane implements ControlPlaneAdapter {
     return (res.databases ?? []).map((d) => normalizeDatabase(d, input.projectId, input.branchId))
   }
 
+  /**
+   * Roles are branch-scoped in Neon, so a role name is only meaningful together
+   * with the branch it was listed from. `connection_uri` requires `role_name`;
+   * without this the caller has to guess or hardcode `neondb_owner`.
+   */
+  async listRoles(input: { projectId: string; branchId: string }): Promise<DatabaseRole[]> {
+    const res = await this.http.request<{ roles: NeonRole[] }>({
+      method: 'GET',
+      path: `/projects/${encodeURIComponent(input.projectId)}/branches/${encodeURIComponent(input.branchId)}/roles`,
+      apiKey: this.apiKey,
+    })
+    return (res.roles ?? []).map((r) => normalizeRole(r, input.branchId))
+  }
+
   async createDatabase(input: {
     projectId: string
     branchId: string
@@ -581,6 +596,15 @@ interface NeonDatabase {
   updated_at?: string
 }
 
+interface NeonRole {
+  branch_id?: string
+  name: string
+  protected?: boolean
+  authentication_method?: string
+  created_at?: string
+  updated_at?: string
+}
+
 interface NeonEndpoint {
   id: string
   branch_id: string
@@ -635,6 +659,23 @@ function normalizeBranch(b: NeonBranch, projectId: string): Branch {
 
 function normalizeOrganization(o: NeonOrganization): Organization {
   return { id: o.id, name: o.name ?? o.id }
+}
+
+/**
+ * Deliberately does not keep `raw`. The Neon `Role` schema marks `password` as
+ * sensitive and the list endpoint may include it; carrying the raw object would
+ * hand the role password to the browser through this response, which is exactly
+ * the credential the dashboard is supposed to keep server-side. Every field the
+ * UI needs is copied explicitly below.
+ */
+function normalizeRole(r: NeonRole, branchId: string): DatabaseRole {
+  return {
+    name: r.name,
+    branchId: r.branch_id ?? branchId,
+    ...(r.protected !== undefined ? { protected: r.protected } : {}),
+    ...(r.authentication_method ? { authenticationMethod: r.authentication_method } : {}),
+    ...(r.created_at ? { createdAt: r.created_at } : {}),
+  }
 }
 
 function normalizeDatabase(d: NeonDatabase, projectId: string, branchId: string): Database {

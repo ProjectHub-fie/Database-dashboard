@@ -83,10 +83,28 @@ is diagnosable, but never the credential.
 ### What API-key mode gives you
 
 - Projects (list, create, delete), organizations (selectable when applicable),
-  branches, databases, and compute endpoints.
+  branches, databases, compute endpoints, and Postgres roles.
 - Asynchronous operation status (create/delete projects, branches, databases)
   with polling until the provider reports success.
 - Connection diagnostics, project/branch/database selection, region display.
+- **Full SQL access to a database without pasting a connection URL.** Open
+  *Databases*, pick a branch, and use **Use database** on any database. The
+  server asks Neon for a credential-bearing connection URI, validates and pins
+  the host, and opens a normal TLS-verified `pg` session. That unlocks Data
+  Browser (browse, insert, update, delete), SQL Studio, Schema Manager,
+  Monitoring, and Import/Export exactly as in URL mode.
+- **Role selection.** The attach dialog lists the roles that exist on the
+  selected branch and shows which ones can open a session. Roles are
+  branch-scoped in Neon, so the list is fetched per branch. A role that
+  authenticates with `no_login` or `oauth` has no password and cannot open a
+  SQL session; the dialog disables it and the server refuses it with an
+  explanation rather than failing later with an opaque authentication error.
+- The credential never reaches the browser: the URI is used server-side and only
+  non-secret metadata (host, port, database, role) is returned.
+
+Attaching a database does not change the session's auth mode: the connection
+stays `auth: 'api'`, so project/branch/database management keeps working
+alongside SQL. Use **Detach** to drop the SQL surface while keeping the key.
 
 ### Organization-scoped keys
 
@@ -113,10 +131,16 @@ come straight from `/projects`, and the account-level details that
 
 | Need | Mode |
 | --- | --- |
-| Run SQL / browse one database | Database URL |
+| Run SQL / browse one database | Either — API key (attach a database) or Database URL |
 | Manage projects, branches, databases, endpoints | Neon API key |
-| See health/metrics of a specific database | Database URL |
-| Create databases in a branch | API key (then connect by URL if you add SQL) |
+| See health/metrics of a specific database | Either — the attached API-key session sees its own database |
+| Create databases in a branch | API key (then attach the new database for SQL) |
+
+API-key mode is the shorter path when you already hold a Neon API key: one key
+gives you both the control plane and SQL access, with no connection string to
+copy around. Database URL mode remains the right choice when you have a
+credential for a database the Neon API does not manage, or when you want the
+session's permissions to be exactly those of a single PostgreSQL role.
 
 You can use both at different times; each connection is independent.
 
