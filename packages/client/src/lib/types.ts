@@ -31,7 +31,7 @@ export interface ConnectionMetadata {
 export interface ProviderCatalogEntry {
   id: string
   name: string
-  kind: 'postgres' | 'mysql' | 'mariadb'
+  kind: 'postgres' | 'mysql' | 'mariadb' | 'mongodb'
   available: boolean
   authMethods: string[]
   controlPlane: boolean

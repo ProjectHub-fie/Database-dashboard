@@ -12,6 +12,8 @@ import {
   catalogIssueMessage,
   reconcileProviderSelection,
 } from '../lib/provider-catalog'
+import { providerFormExamples } from '../lib/provider-examples'
+import type { ProviderFormExamples } from '../lib/provider-examples'
 import { Footer } from '../components/Footer'
 import { ApiUnreachableBanner } from '../components/ApiUnreachableBanner'
 import { GoToTop } from '../components/GoToTop'
@@ -140,6 +142,17 @@ export function LoginPage() {
     [providerOptions, providerId],
   )
 
+  // Engine-specific placeholder text (connection URL, API key) for the provider
+  // currently selected. Keeps a Mongo form from showing a Neon example.
+  const formExamples = useMemo(
+    () => providerFormExamples(providerOptions, providerId),
+    [providerOptions, providerId],
+  )
+  const selectedProvider = useMemo(
+    () => providerOptions?.find((p) => p.id === providerId) ?? null,
+    [providerOptions, providerId],
+  )
+
   function switchMode(next: Mode) {
     setPicked(next)
     setError(null)
@@ -196,7 +209,7 @@ export function LoginPage() {
     setNotice(null)
     setPreview(null)
     if (!url.trim()) {
-      setError('Paste a PostgreSQL connection string first.')
+      setError(formExamples.emptyUrlError)
       return
     }
     setTesting(true)
@@ -394,6 +407,7 @@ export function LoginPage() {
                 setDisplayName={setUrlName}
                 show={showUrl}
                 setShow={setShowUrl}
+                examples={formExamples}
                 preview={preview}
                 testing={testing}
                 busy={busy}
@@ -413,6 +427,8 @@ export function LoginPage() {
                 onRetryProviders={loadProviders}
                 providerId={providerId}
                 setProviderId={setProviderId}
+                examples={formExamples}
+                provider={selectedProvider}
                 apiKey={apiKey}
                 setApiKey={setApiKey}
                 displayName={apiName}
@@ -651,6 +667,7 @@ function UrlPanel(props: {
   onRetryProviders: () => void
   providerId: string
   setProviderId: (v: string) => void
+  examples: ProviderFormExamples
   url: string
   setUrl: (v: string) => void
   displayName: string
@@ -670,7 +687,7 @@ function UrlPanel(props: {
       <PanelHeading
         icon={<Database className="h-4 w-4" />}
         title="Database URL"
-        subtitle="Direct PostgreSQL access to exactly one database."
+        subtitle={props.examples.urlSubtitle}
       />
 
       <div className="mt-5 space-y-4">
@@ -702,8 +719,8 @@ function UrlPanel(props: {
             show={props.show}
             onToggle={() => props.setShow(!props.show)}
             mono
-            placeholder="postgresql://user:password@ep-xxx.us-east-2.aws.neon.tech/neondb?sslmode=require"
-            ariaLabel="PostgreSQL connection string"
+            placeholder={props.examples.connectionUrl}
+            ariaLabel={props.examples.urlAriaLabel}
           />
         </div>
 
@@ -766,6 +783,8 @@ function ApiPanel(props: {
   onRetryProviders: () => void
   providerId: string
   setProviderId: (v: string) => void
+  examples: ProviderFormExamples
+  provider: ProviderCatalogEntry | null
   apiKey: string
   setApiKey: (v: string) => void
   displayName: string
@@ -809,7 +828,7 @@ function ApiPanel(props: {
             show={props.show}
             onToggle={() => props.setShow(!props.show)}
             mono
-            placeholder="neon_xxxxxxxxxxxxxxxx"
+            placeholder={props.examples.apiKey}
             ariaLabel="Provider API key"
           />
           <p className="mt-2 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
@@ -833,7 +852,7 @@ function ApiPanel(props: {
           <Input
             value={props.displayName}
             onChange={(e) => props.setDisplayName(e.target.value)}
-            placeholder="Team Neon account"
+            placeholder={`Team ${props.provider?.name ?? 'database'} account`}
             maxLength={64}
             autoComplete="off"
           />
@@ -846,14 +865,15 @@ function ApiPanel(props: {
             </div>
             <p className="mt-1.5 text-[11.5px] text-slate-700 dark:text-slate-300">
               {props.orgScoped
-                ? 'Organization-scoped key. Neon does not let these read account-level details, so projects are listed directly.'
+                ? `Organization-scoped key. ${providerName(props.provider)} does not let these read account-level details, so projects are listed directly.`
                 : props.orgs.length === 0
                   ? 'This key can see your personal account but no organizations.'
                   : `${props.orgs.length} organization(s): ${props.orgs.map((o) => o.name).join(', ')}`}
             </p>
             <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
-              The key manages Neon resources. To run SQL you also attach a database: open
-              Databases, then choose “Use database” on the one you want.
+              The key manages {props.provider?.name ?? 'provider'} resources. To run SQL
+              you also attach a database: open Databases, then choose “Use database” on the one
+              you want.
             </p>
             <Button type="button" size="sm" onClick={props.onOpen} className="mt-2.5">
               Open dashboard <ArrowRight className="h-3.5 w-3.5" />
@@ -947,6 +967,12 @@ function SecretInput({
       </button>
     </div>
   )
+}
+
+function providerName(p: ProviderCatalogEntry | null): string {
+  // "Neon PostgreSQL" → "Neon", "MongoDB Atlas" → "MongoDB Atlas".
+  const short = p?.name.split(' ')[0]
+  return short && short.length > 0 ? short : 'The provider'
 }
 
 function Field({ label, value }: { label: string; value: string }) {
