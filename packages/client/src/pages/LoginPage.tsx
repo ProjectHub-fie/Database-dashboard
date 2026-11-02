@@ -240,7 +240,6 @@ export function LoginPage() {
 
   async function connectApi(e: FormEvent) {
     e.preventDefault()
-    if (!signedIn && authRequired) return requireSignIn()
     setError(null)
     setNotice(null)
     setOrgs(null)
@@ -328,7 +327,9 @@ export function LoginPage() {
             className="grid grid-cols-1 gap-1 rounded-xl bg-slate-100 p-1 sm:grid-cols-3 dark:bg-slate-800/60"
           >
             <TabButton active={mode === 'url'} onClick={() => switchMode('url')} icon={<Database className="h-3.5 w-3.5" />} label="Database URL" locked={authRequired && !signedIn} />
-            <TabButton active={mode === 'api'} onClick={() => switchMode('api')} icon={<KeyRound className="h-3.5 w-3.5" />} label="Provider API key" locked={authRequired && !signedIn} />
+            {/* API-key mode is public by design: the operator supplies their own
+                key, which is bound to this browser's anonymous session. Never locked. */}
+            <TabButton active={mode === 'api'} onClick={() => switchMode('api')} icon={<KeyRound className="h-3.5 w-3.5" />} label="Provider API key" locked={false} />
             <TabButton active={mode === 'account'} onClick={() => switchMode('account')} icon={<UserRound className="h-3.5 w-3.5" />} label="Dashboard account" locked={false} />
           </div>
 
@@ -406,7 +407,7 @@ export function LoginPage() {
             {mode === 'api' && (
               <ApiPanel
                 signedIn={signedIn}
-                worksSignedOut={!authRequired}
+                worksSignedOut={true}
                 providers={providerOptions}
                 catalogIssue={catalogIssue}
                 onRetryProviders={loadProviders}

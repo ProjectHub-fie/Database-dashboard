@@ -18,6 +18,11 @@ const loginSchema = z.object({
   password: z.string().min(1).max(512),
 })
 
+/** The account requirement as applied to *this* request (usually global config). */
+function effectiveAuthRequired(res: Response): boolean {
+  return (res.locals.authRequired as boolean | undefined) ?? config.authRequired
+}
+
 const reauthSchema = z.object({ password: z.string().min(1).max(512) })
 
 const changePasswordSchema = z.object({
@@ -97,7 +102,7 @@ export function authRouter(): Router {
 
     res.json({
       authenticated: true,
-      authRequired: config.authRequired,
+      authRequired: effectiveAuthRequired(res),
       user: {
         id: user.id,
         username: user.username,
@@ -187,9 +192,11 @@ export function authRouter(): Router {
     const ctx = ctxOf(req)
     void req
     if (!res.locals.authenticated) {
-      // authRequired lets the UI keep connection screens reachable while the
-      // account requirement is disabled; it is not a client-side permission.
-      res.json({ authenticated: false, authRequired: config.authRequired, anonymous: Boolean(res.locals.anonymous) })
+      // authRequired lets the UI keep the Database URL tab locked after
+      // sign-out. It must reflect the policy applied to this session, so the
+      // client never has to re-derive it (which is why the lock re-appeared
+      // only on the next page reload). It is not a client-side permission.
+      res.json({ authenticated: false, authRequired: effectiveAuthRequired(res), anonymous: Boolean(res.locals.anonymous) })
       return
     }
     const account = res.locals.account as SessionAccount
@@ -197,6 +204,7 @@ export function authRouter(): Router {
     // Never leak password hashes, roles or session internals to the browser.
     res.json({
       authenticated: true,
+      authRequired: effectiveAuthRequired(res),
       user: {
         id: account.user.id,
         username: account.user.username,

@@ -94,7 +94,7 @@ export function createRegistry(): ProviderRegistryImpl {
 export const PLANNED_PROVIDERS: ReadonlyArray<{
   id: string
   name: string
-  kind: 'postgres' | 'mysql' | 'mariadb'
+  kind: 'postgres' | 'mysql' | 'mariadb' | 'mongodb'
   /** What still has to be built before it can be enabled. */
   blockedBy: string
 }> = [

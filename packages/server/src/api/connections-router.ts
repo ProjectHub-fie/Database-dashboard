@@ -1,14 +1,17 @@
 import { Router, Request, Response } from 'express'
 import { z } from 'zod'
+import crypto from 'node:crypto'
 import { AppError } from '../lib/errors.js'
 import { ctxOf } from './context.js'
 import { actorId } from './middleware.js'
 import { redact } from '../lib/redact.js'
-import { verifyNeonConnectionUrl } from '../security/netlib.js'
+import { verifyMongodbConnectionUrl, verifyNeonConnectionUrl } from '../security/netlib.js'
 import { NeonProvider } from '../providers/neon/provider.js'
 import { capabilitiesForAuth, serializeCapabilities } from '../providers/registry.js'
 import { readOnlyRoles } from '../security/roles.js'
 import { config } from '../config.js'
+import type { ConnectionRef, ControlPlaneAdapter, Provider } from '../providers/types.js'
+
 
 /** Optional operator label for the connection. Never used in SQL or URLs. */
 const displayNameSchema = z
@@ -20,14 +23,20 @@ const displayNameSchema = z
   .refine((v) => !/[\u0000-\u001f\u007f]/.test(v), { message: 'Display name contains control characters' })
   .optional()
 
+const providerIdSchema = z
+  .string()
+  .min(1)
+  .max(40)
+  .regex(/^[a-z0-9][a-z0-9-]{0,39}$/)
+
 const connectUrlSchema = z.object({
-  providerId: z.literal('neon'),
+  providerId: providerIdSchema,
   connectionString: z.string().min(9).max(2000),
   displayName: displayNameSchema,
 })
 
 const connectApiSchema = z.object({
-  providerId: z.literal('neon'),
+  providerId: providerIdSchema,
   apiKey: z.string().min(8).max(2000),
   displayName: displayNameSchema,
 })
@@ -74,13 +83,66 @@ export function connectionsRouter(): Router {
   router.post('/url', async (req: Request, res: Response) => {
     const ctx = ctxOf(req)
     const sessionRef = String(res.locals.sessionRef ?? '')
-    const { connectionString, displayName } = connectUrlSchema.parse(req.body ?? {})
-    const provider = ctx.registry.require('neon') as NeonProvider
+    const { providerId, connectionString, displayName } = connectUrlSchema.parse(req.body ?? {})
+    const provider = ctx.registry.get(providerId) as Provider | undefined
+    if (!provider) {
+      throw new AppError({ code: 'BAD_REQUEST', message: `Unknown provider '${providerId}'.` })
+    }
 
-    // Host allowlisting, DNS pinning and TLS are all enforced by
-    // verifyNeonConnectionUrl (single source of truth).
+    // Neon keeps the tighter legacy path (fast ping before the session exists,
+    // and the provider re-verifies the host). Mongo goes straight through the
+    // provider connect() which pins the host and TLS identically.
+    if (provider.info.kind === 'mongodb') {
+      const { connection, metadata, accountOnly } = await provider.connect({
+        kind: 'connection',
+        connectionString,
+      })
+      const secrets = mongoSecretsFromUrl(connectionString)
+      ctx.providerSessions.create({
+        sessionId: sessionRef,
+        userId: actorId(res),
+        providerId: provider.info.id,
+        auth: 'connection',
+        connection,
+        controlPlane: null,
+        accountOnly,
+        metadata: {
+          ...metadata,
+          ...(displayName ? { displayName } : {}),
+        },
+        secretHints: secrets,
+      })
+      ctx.audit.write({
+        userId: actorId(res),
+        sessionId: sessionRef,
+        event: 'connection.connect',
+        status: 'ok',
+        target: `${metadata.host}/${metadata.database}`,
+        detail: redact(`auth=connection provider=${provider.info.id} host=${metadata.host} database=${metadata.database} role=${metadata.role}`, {
+          secrets,
+        }),
+      })
+      res.json({
+        connected: true,
+        metadata: {
+          host: metadata.host,
+          database: metadata.database,
+          role: metadata.role,
+          readOnly: metadata.readOnly,
+          ...(displayName ? { displayName } : {}),
+        },
+        accountOnly,
+        capabilities: serializeCapabilities(
+          capabilitiesForAuth(ctx.registry.capabilities(provider.info.id), 'connection'),
+        ),
+      })
+      return
+    }
 
-    // Verify + pin the host BEFORE building any client.
+    // Neon (and any future pg-family provider): verify/pin, then build the
+    // cloned client directly. Kept separate so the existing contract and
+    // tests are untouched.
+    const neon = provider as NeonProvider
     const url = new URL(connectionString)
     const decodedPass = url.password ? decodeURIComponent(url.password) : ''
     const verified = await verifyNeonConnectionUrl(connectionString, {
@@ -96,7 +158,7 @@ export function connectionsRouter(): Router {
       pinnedAddress: verified.verified.address,
     }
 
-    const connRef = await providerConnectWithUrl(provider, clientOpts)
+    const connRef = await providerConnectWithUrl(neon, clientOpts)
     const readOnly = readOnlyRoles.has(verified.role.toLowerCase())
 
     ctx.providerSessions.create({
@@ -144,25 +206,31 @@ export function connectionsRouter(): Router {
     })
   })
 
-  // POST /api/connections/api — connect with a Neon API key.
+  // POST /api/connections/api — connect with a provider API key.
   router.post('/api', async (req: Request, res: Response) => {
     const ctx = ctxOf(req)
     const sessionRef = String(res.locals.sessionRef ?? '')
-    const { apiKey, displayName } = connectApiSchema.parse(req.body ?? {})
-    const provider = ctx.registry.require('neon') as NeonProvider
+    const { providerId, apiKey, displayName } = connectApiSchema.parse(req.body ?? {})
+    const provider = ctx.registry.get(providerId) as ApiCapableProvider | undefined
+    if (!provider) {
+      throw new AppError({ code: 'BAD_REQUEST', message: `Unknown provider '${providerId}'.` })
+    }
     const control = provider.controlPlaneFor(apiKey)
     const validation = await control.validateApiKey()
+
+    const accountHost =
+      provider.info.kind === 'mongodb' ? 'cloud.mongodb.com' : 'console.neon.tech'
 
     ctx.providerSessions.create({
       sessionId: sessionRef,
       userId: actorId(res),
-      providerId: 'neon',
+      providerId: provider.info.id,
       auth: 'api',
       connection: null,
       controlPlane: control,
       accountOnly: true,
       metadata: {
-        host: 'console.neon.tech',
+        host: accountHost,
         database: '',
         role: '',
         readOnly: false,
@@ -181,7 +249,7 @@ export function connectionsRouter(): Router {
       event: 'connection.connect',
       status: 'ok',
       target: 'api-key',
-      detail: redact(`auth=api organizations=${validation.organizations?.length ?? 0}`, {
+      detail: redact(`auth=api provider=${provider.info.id} organizations=${validation.organizations?.length ?? 0}`, {
         secrets: [apiKey],
       }),
     })
@@ -190,7 +258,7 @@ export function connectionsRouter(): Router {
       connected: true,
       auth: 'api',
       metadata: {
-        host: 'console.neon.tech',
+        host: accountHost,
         database: '',
         role: '',
         readOnly: false,
@@ -198,7 +266,7 @@ export function connectionsRouter(): Router {
       },
       accountOnly: true,
       capabilities: serializeCapabilities(
-        capabilitiesForAuth(ctx.registry.capabilities('neon'), 'api'),
+        capabilitiesForAuth(ctx.registry.capabilities(provider.info.id), 'api'),
       ),
       organizations: validation.organizations ?? [],
       organizationScoped: validation.organizationScoped === true,
@@ -423,10 +491,28 @@ export function connectionsRouter(): Router {
     }
   })
 
-  // GET /api/connections/preview — validate a URL without connecting (returns safe metadata only).
+  // POST /api/connections/preview — validate a URL without connecting (returns safe metadata only).
   router.post('/preview', async (req: Request, res: Response) => {
     void req
-    const { connectionString } = connectUrlSchema.parse(req.body ?? {})
+    const { providerId, connectionString } = connectUrlSchema.parse(req.body ?? {})
+    const provider = ctxOf(req).registry.get(providerId)
+    if (!provider) {
+      throw new AppError({ code: 'BAD_REQUEST', message: `Unknown provider '${providerId}'.` })
+    }
+    if (provider.info.kind === 'mongodb') {
+      const meta = await verifyMongodbConnectionUrl(connectionString, {
+        allowLocalhost: config.nodeEnv !== 'production',
+      })
+      res.json({
+        host: meta.host,
+        database: meta.database,
+        role: meta.role,
+        readOnly: meta.role.toLowerCase() === 'readonly',
+        port: meta.port,
+        hostVerified: true,
+      })
+      return
+    }
     const meta = await verifyNeonConnectionUrl(connectionString, {
       allowLocalhost: config.nodeEnv !== 'production',
     })
@@ -445,8 +531,8 @@ export function connectionsRouter(): Router {
   router.get('/supported-hosts', (_req: Request, res: Response) => {
     res.json({
       message:
-        'Only Neon PostgreSQL hosts are allowed (suffix *.neon.tech / *.neon.build) plus localhost in development.',
-      hosts: ['*.neon.tech', '*.neon.build'],
+        'Only Neon PostgreSQL hosts (*.neon.tech / *.neon.build) and MongoDB Atlas hosts (*.mongodb.net) are allowed, plus localhost in development.',
+      hosts: ['*.neon.tech', '*.neon.build', '*.mongodb.net'],
     })
   })
 
@@ -521,10 +607,26 @@ function safe(err: unknown): string {
   return err instanceof AppError ? err.message : 'Database is not reachable'
 }
 
-import crypto from 'node:crypto'
+/** Extract secret-bearing parts of a MongoDB URL for redaction hints. */
+function mongoSecretsFromUrl(raw: string): string[] {
+  try {
+    const url = new URL(raw)
+    const secrets = [
+      url.password ? decodeURIComponent(url.password) : '',
+      url.username ? decodeURIComponent(url.username) : '',
+      (url.pathname || '/').replace(/^\//, '').split('?')[0] || '',
+    ].filter((s) => s.length > 0)
+    return secrets
+  } catch {
+    return []
+  }
+}
+
 function randomId(): string {
   return crypto.randomBytes(12).toString('hex')
 }
 
-import type { ConnectionRef, Provider } from '../providers/types.js'
 export type { ConnectionRef, Provider }
+
+/** Provider that supports the 'api' auth method (has `controlPlaneFor(apiKey)`). */
+type ApiCapableProvider = Provider & { controlPlaneFor: (apiKey: string) => ControlPlaneAdapter }

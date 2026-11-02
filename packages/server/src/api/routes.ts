@@ -1,5 +1,6 @@
 import type { Express, Request, Response } from 'express'
 import { sessionMiddleware, requireAuth, csrfProtection, anonymousSession } from './middleware.js'
+import { ctxOf } from './context.js'
 import { authRouter } from './auth-router.js'
 import { providersRouter } from './providers-router.js'
 import { connectionsRouter } from './connections-router.js'
@@ -9,6 +10,30 @@ import { schemaRouter } from './schema-router.js'
 import { controlPlaneRouter } from './control-plane-router.js'
 import { auditRouter } from './audit-router.js'
 import type { AnonymousSessionStore } from '../security/anon-session.js'
+
+/**
+ * URL-mode paths that must always demand a real dashboard account. A pasted
+ * database URL grants direct SQL access, so it is never allowed on an
+ * anonymous ref.
+ */
+const URL_ONLY_PATHS = new Set(['/connections/url', '/connections/preview'])
+
+/**
+ * Whether a request may pass the account gate solely on the strength of a
+ * provider session bound to its (possibly anonymous) session ref. This is the
+ * public provider-API-key path: the key is the credential, the ref isolates
+ * it, and the provider's own permissions authorize it. URL-mode entry points
+ * are excluded even when a session already exists so an anonymous API-key
+ * holder cannot silently switch to URL mode.
+ */
+function publicApiKeyCallAllowed(req: Request, res: Response): boolean {
+  if (URL_ONLY_PATHS.has(req.path)) return false
+  // The connect call establishes the session, so there is nothing to hold yet;
+  // it is the public entry point for API-key mode.
+  if (req.method === 'POST' && req.path === '/connections/api') return true
+  if (!res.locals.sessionRef) return false
+  return ctxOf(req).providerSessions.has(String(res.locals.sessionRef))
+}
 
 export interface ApiRouteOptions {
   anonSessions: AnonymousSessionStore
@@ -38,11 +63,22 @@ export function registerApiRoutes(app: Express, opts: ApiRouteOptions): void {
   // implement. Contains no secrets, and the login screen needs it before sign-in.
   app.use('/api/providers', providersRouter())
 
+  /**
+   * Provider API-key mode is public by design, even under AUTH_REQUIRED=true:
+   * the operator supplies their own key, it is bound to their anonymous session
+   * ref (`anonymousSession` above), and the provider's own permissions decide
+   * what the key can do. A caller that already holds a provider session for its
+   * ref is allowed through the account gate — the provider session *is* the
+   * authorization, and the route handlers enforce ownership. URL-mode entry
+   * points (`/connections/url`, `/connections/preview`) are excluded so a
+   * pasted database URL still requires a real dashboard account.
+   */
   app.use(
     '/api',
     (req, res, next) => {
       if (req.path === '/auth/login') return next()
       if (opts.authRequired === false) return next()
+      if (publicApiKeyCallAllowed(req, res)) return next()
       return requireAuth(req, res, next)
     },
     csrfProtection({ exempt: (req) => ['GET', 'HEAD', 'OPTIONS'].includes(req.method) }),

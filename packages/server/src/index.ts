@@ -12,6 +12,7 @@ import { AuditService } from './security/audit.js'
 import { ProviderSessionManager } from './security/provider-sessions.js'
 import { ProviderRegistryImpl } from './providers/registry.js'
 import { NeonProvider } from './providers/neon/provider.js'
+import { MongoDbProvider } from './providers/mongodb-atlas/provider.js'
 import { installContext, errorHandler } from './api/middleware.js'
 import { registerApiRoutes } from './api/routes.js'
 import { AnonymousSessionStore } from './security/anon-session.js'
@@ -32,6 +33,10 @@ export async function createApp(): Promise<{
   const registry = new ProviderRegistryImpl()
   const provider = new NeonProvider({})
   registry.register(provider)
+  const mongo = new MongoDbProvider({
+    skipConnectionUrlHostValidation: config.nodeEnv === 'test',
+  })
+  registry.register(mongo)
   const auth = new AuthService(store)
   const audit = new AuditService(store)
   const sessions = new ProviderSessionManager((id) => registry.get(id))

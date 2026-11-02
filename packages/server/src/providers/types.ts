@@ -32,6 +32,7 @@ export type Capability =
   | 'browse.insert'
   | 'browse.update'
   | 'browse.delete'
+  | 'browse.documents' // document-oriented browsing (Mongo collections)
   | 'data.export.csv'
   | 'data.export.json'
   | 'data.export.sql'
@@ -65,8 +66,8 @@ export interface ProviderCapabilities {
 export interface ProviderInfo {
   id: string
   name: string
-  /** Database engine family. Only `postgres` is implemented in this release. */
-  kind: 'postgres' | 'mysql' | 'mariadb'
+  /** Database engine family. `postgres` and `mongodb` are implemented. */
+  kind: 'postgres' | 'mysql' | 'mariadb' | 'mongodb'
   controlPlane: boolean
   apiBaseUrl?: string
   apiDocs: string
@@ -82,7 +83,7 @@ export interface ProviderInfo {
  * uses `?` placeholders, backticks, and its database *is* the schema layer.
  */
 export interface EngineDialect {
-  kind: 'postgres' | 'mysql' | 'mariadb'
+  kind: 'postgres' | 'mysql' | 'mariadb' | 'mongodb'
   /** Placeholder text for the Nth positional parameter (1-based). */
   placeholder: (position: number) => string
   /** Quote a single identifier using the engine's own rules. */
@@ -336,7 +337,7 @@ export interface SqlExecutionOptions {
 }
 
 export interface DatabaseAdapter<Conn = unknown> {
-  readonly kind: 'postgres' | string
+  readonly kind: 'postgres' | 'mongodb' | string
   /**
    * Declared engine dialect. Required so a MySQL/MariaDB adapter can plug in
    * without the shared layer assuming PostgreSQL placeholder/quoting rules.

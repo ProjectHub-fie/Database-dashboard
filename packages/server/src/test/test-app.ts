@@ -11,6 +11,8 @@ import { ProviderSessionManager } from '../security/provider-sessions.js'
 import { ProviderRegistryImpl } from '../providers/registry.js'
 import { NeonProvider } from '../providers/neon/provider.js'
 import { NeonHttpClient, NeonApiError } from '../providers/neon/client.js'
+import { MongoDbProvider } from '../providers/mongodb-atlas/provider.js'
+import { MockAtlasHttpClient, MockAtlasOauthClient, mockAtlasHttp, mockAtlasOauth } from './mock-atlas.js'
 import { installContext, errorHandler } from '../api/middleware.js'
 import { AnonymousSessionStore } from '../security/anon-session.js'
 import { registerApiRoutes } from '../api/routes.js'
@@ -80,7 +82,12 @@ export function mockNeonHttp(): MockNeonHttpClient {
  * Anonymous-mode tests opt in explicitly with `authRequired: false`.
  */
 export async function makeTestApp(
-  opts: { neonHttp?: MockNeonHttpClient; authRequired?: boolean } = {},
+  opts: {
+    neonHttp?: MockNeonHttpClient
+    atlasHttp?: MockAtlasHttpClient
+    atlasOauth?: MockAtlasOauthClient
+    authRequired?: boolean
+  } = {},
 ): Promise<{
   app: express.Express
   store: Store
@@ -88,6 +95,8 @@ export async function makeTestApp(
   audit: AuditService
   sessions: ProviderSessionManager
   neon: MockNeonHttpClient
+  atlas: MockAtlasHttpClient
+  atlasOauth: MockAtlasOauthClient
 }> {
   const store = new Store(':memory:')
   const auth = new AuthService(store)
@@ -96,6 +105,13 @@ export async function makeTestApp(
   const neonHttp = opts.neonHttp ?? mockNeonHttp()
   const provider = new NeonProvider({ http: neonHttp, skipConnectionUrlHostValidation: true })
   registry.register(provider)
+  const atlasHttp = opts.atlasHttp ?? mockAtlasHttp()
+  const atlasOauth = opts.atlasOauth ?? mockAtlasOauth()
+  const mongo = new MongoDbProvider({
+    skipConnectionUrlHostValidation: true,
+    atlas: { http: atlasHttp, oauth: atlasOauth },
+  })
+  registry.register(mongo)
   const sessions = new ProviderSessionManager((id) => registry.get(id))
   const anonSessions = new AnonymousSessionStore()
   const ctx = { store, auth, providerSessions: sessions, audit, registry, anonSessions }
@@ -110,7 +126,7 @@ export async function makeTestApp(
   registerApiRoutes(app, { anonSessions, authRequired: opts.authRequired ?? true })
   app.use(errorHandler)
   forwardAsyncErrors(app)
-  return { app, store, audit, auth, sessions, neon: neonHttp }
+  return { app, store, audit, auth, sessions, neon: neonHttp, atlas: atlasHttp, atlasOauth }
 }
 
 /** Create a user in the store directly (bypass Argon2 for speed) + return login creds. */
