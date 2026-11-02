@@ -143,7 +143,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // Even if the server is unreachable, clear local state.
     } finally {
-      setMe({ authenticated: false })
+      // Preserve `authRequired` (server policy) across logout. Dropping it made
+      // the DB URL / API-key tabs lose their lock on the re-render after sign-out
+      // and only regain it on the next reload when /api/auth/me reported it again.
+      setMe((prev) => ({ authenticated: false, authRequired: prev?.authRequired }))
       setConnection({ connected: false })
       setBusy(false)
     }

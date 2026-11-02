@@ -3,8 +3,9 @@
  *
  * Goals:
  *  - Never let a user-provided hostname reach the network without validation.
- *  - Only allow approved Neon PostgreSQL hosts (`*.neon.tech` and the migration
- *    endpoint `*.neon.build` for old projects) and `localhost` in development.
+ *  - Only allow approved Neon PostgreSQL hosts (`*.neon.tech` / `*.neon.build`)
+ *    and approved MongoDB Atlas hosts (`*.mongodb.net`), plus `localhost` in
+ *    development. All other destinations are refused.
  *  - Never resolve to a private / loopback / link-local / reserved IP (SSRF).
  *  - Pin the resolved IP to the socket so an attacker cannot swap DNS between
  *    the resolve step and the connect step (DNS-rebinding defence).
@@ -17,6 +18,16 @@ import { AppError } from '../lib/errors.js'
 import { config } from '../config.js'
 
 export const NEON_HOST_SUFFIXES = ['.neon.tech', '.neon.build'] as const
+export const MONGODB_HOST_SUFFIXES = [
+  // MongoDB Atlas shared/up-to-100 nodes (M0/M2/M5) use `<cluster>.mongodb.net`,
+  // serverless clusters use `*-serverless.mongodb.net`, and the SRV host of a
+  // replicaset is also `<cluster>.mongodb.net`. Atlas dedicated clusters use
+  // `<cluster>.mongodb.net` / `<cluster>.mongodb.net.`. Self-hosted Mongo
+  // destinations are intentionally *not* allowlisted: the dashboard refuses
+  // unknown hosts exactly like it refuses non-Neon Postgres to prevent SSRF.
+  '.mongodb.net',
+  '.mongodb.net.',
+] as const
 export const LOCALHOST_HOSTS = ['localhost', '127.0.0.1', '::1']
 
 export interface VerifiedHost {
@@ -154,6 +165,120 @@ export async function verifyNeonHost(
 
   return { host, port: 5432, address: addresses[0]!, isLocalhost: false }
 }
+
+/**
+ * Validate a MongoDB connection URL. Only Atlas `*.mongodb.net` hosts are
+ * permitted (self-hosted Mongo is intentionally blocked to prevent SSRF) and
+ * the resolved address is pinned, same as Neon. The SRV form is handled as
+ * well: Node's driver resolves the SRV records itself, so this validation
+ * checks the hostname suffix and the initial resolved A address without
+ * unwrapping SRV.
+ */
+export async function verifyMongodbConnectionUrl(
+  rawUrl: string,
+  opts: { allowLocalhost?: boolean } = {},
+): Promise<{
+  host: string
+  port: number
+  database: string
+  role: string
+  secrets: string[]
+  verified: PinnedVerifiedHost
+}> {
+  let url: URL
+  try {
+    url = new URL(rawUrl)
+  } catch {
+    throw new AppError({ code: 'BAD_REQUEST', message: 'Invalid database URL format' })
+  }
+
+  if (!['mongodb:', 'mongodb+srv:'].includes(url.protocol)) {
+    throw new AppError({ code: 'BAD_REQUEST', message: 'Expected a mongodb:// or mongodb+srv:// connection URL' })
+  }
+
+  const host = url.hostname
+  if (!host) throw new AppError({ code: 'BAD_REQUEST', message: 'Database URL is missing a host' })
+  const port = url.port ? Number.parseInt(url.port, 10) : 27017
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new AppError({ code: 'BAD_REQUEST', message: 'Database URL has an invalid port' })
+  }
+
+  const rawPassword = url.password ? decodeURIComponent(url.password) : ''
+  const role = url.username ? decodeURIComponent(url.username) : ''
+  const database = url.pathname.replace(/^\//, '').split('?')[0] || 'test'
+  const secrets = [rawPassword, role, database].filter((s) => s.length > 0)
+
+  const verified = await verifyMongodbHost(host, { allowLocalhost: opts.allowLocalhost })
+  return { host, port, database, role, secrets, verified }
+}
+
+/**
+ * Validate a host for MongoDB connections and pin its IP address. Explicitly
+ * rejects private, loopback (unless dev override), link-local, multicast,
+ * reserved and documentation ranges.
+ */
+export async function verifyMongodbHost(
+  host: string,
+  opts: { allowLocalhost?: boolean } = {},
+): Promise<PinnedVerifiedHost> {
+  const allowLocalhost = opts.allowLocalhost ?? config.nodeEnv !== 'production'
+  const lower = host.toLowerCase()
+
+  if (LOCALHOST_HOSTS.includes(lower)) {
+    if (!allowLocalhost) {
+      throw new AppError({
+        code: 'CONNECTION_UNSUPPORTED_HOST',
+        message: 'This host is not permitted',
+        detail: `host '${host}' is a local address and outbound connections are restricted`,
+      })
+    }
+    return { host, port: 27017, address: '127.0.0.1', isLocalhost: true }
+  }
+
+  const literal = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host
+  if (net.isIP(literal) !== 0) {
+    throw new AppError({
+      code: 'CONNECTION_UNSUPPORTED_HOST',
+      message: 'IP address literals are not permitted; use a database hostname',
+    })
+  }
+
+  if (host.length > 253 || !/^[a-z0-9.-]+$/i.test(host)) {
+    throw new AppError({ code: 'BAD_REQUEST', message: 'Hostname contains invalid characters' })
+  }
+
+  const isMongo = MONGODB_HOST_SUFFIXES.some((suffix) => lower.endsWith(suffix))
+  if (!isMongo) {
+    throw new AppError({
+      code: 'CONNECTION_UNSUPPORTED_HOST',
+      message: `Only MongoDB Atlas hosts are allowed (expected *mongodb.net). Host '${host}' is not an approved Mongo endpoint.`,
+    })
+  }
+
+  const addresses = await resolveAddresses(host)
+  if (addresses.length === 0) {
+    throw new AppError({
+      code: 'CONNECTION_FAILED',
+      message: `Could not resolve database host '${host}'`,
+      detail: `DNS resolution returned no addresses for ${host}`,
+    })
+  }
+
+  for (const addr of addresses) {
+    if (isForbiddenAddress(addr)) {
+      throw new AppError({
+        code: 'CONNECTION_UNSUPPORTED_HOST',
+        message: 'Database host resolves to an address that is not reachable from this service',
+        detail: `${host} resolved to forbidden address ${addr}`,
+      })
+    }
+  }
+
+  return { host, port: 27017, address: addresses[0]!, isLocalhost: false }
+}
+
+/** Like `VerifiedHost` but for Mongo paths (port defaults to 27017). */
+export type PinnedVerifiedHost = VerifiedHost
 
 async function resolveAddresses(host: string): Promise<string[]> {
   const results = (await dns.resolve4(host, { ttl: false })) as string[]

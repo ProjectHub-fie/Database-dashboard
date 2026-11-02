@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { verifyNeonConnectionUrl, isForbiddenAddress, verifyNeonHost, LOCALHOST_HOSTS } from './netlib.js'
+import {
+  verifyNeonConnectionUrl,
+  verifyMongodbConnectionUrl,
+  verifyMongodbHost,
+  isForbiddenAddress,
+  verifyNeonHost,
+  LOCALHOST_HOSTS,
+} from './netlib.js'
 
 describe('verifyNeonConnectionUrl', () => {
   it('rejects non-Neon hosts', async () => {
@@ -78,5 +85,42 @@ describe('TLS cannot be disabled by user input', () => {
       expect(verified).not.toHaveProperty('ssl')
       expect(verified.host).toBe('localhost')
     }
+  })
+})
+
+describe('verifyMongodbConnectionUrl', () => {
+  it('rejects non-Atlas hosts (self-hosted Mongo refused to prevent SSRF)', async () => {
+    await expect(
+      verifyMongodbConnectionUrl('mongodb://u:p@mongo.internal.example:27017/db', { allowLocalhost: false }),
+    ).rejects.toThrow(/mongodb\.net/)
+  })
+
+  it('rejects non-mongodb protocols', async () => {
+    await expect(
+      verifyMongodbConnectionUrl('postgres://u:p@cluster.mongodb.net/db', { allowLocalhost: false }),
+    ).rejects.toThrow(/mongodb:\/\//)
+  })
+
+  it('rejects IP address literals in the host', async () => {
+    await expect(
+      verifyMongodbConnectionUrl('mongodb://u:p@10.0.0.5:27017/db', { allowLocalhost: false }),
+    ).rejects.toThrow(/hostname/)
+  })
+
+  it('masks plaintext credentials in error output', async () => {
+    let message = ''
+    try {
+      await verifyMongodbConnectionUrl('mongodb://u:mongo-supersecret@internal.invalid/db', { allowLocalhost: false })
+    } catch (e) {
+      message = e instanceof Error ? e.message : String(e)
+    }
+    expect(message).not.toContain('mongo-supersecret')
+    expect(message).toContain('mongodb.net')
+  })
+
+  it('rejects localhost in production mode', async () => {
+    await expect(
+      verifyMongodbHost('localhost', { allowLocalhost: false }),
+    ).rejects.toThrow(/not permitted/)
   })
 })

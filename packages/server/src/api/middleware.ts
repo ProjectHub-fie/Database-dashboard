@@ -69,8 +69,12 @@ export function sessionMiddleware(sessionCookieName = SESSION_COOKIE) {
 }
 
 /**
- * Anonymous session resolution, active only while `config.authRequired` is
- * false.
+ * Anonymous session resolution.
+ *
+ * Every browser that lacks a dashboard session receives an anonymous session
+ * ref, even when `config.authRequired` is true. The provider-API-key entry
+ * points are public by design (an operator supplies their own key, which is
+ * bound to this ref), while URL-mode connections stay account-gated.
  *
  * It mints the same three locals a dashboard session provides — `sessionRef`,
  * `csrf` and `authenticated` — so downstream code (provider session keying,
@@ -84,7 +88,7 @@ export function anonymousSession(store: AnonymousSessionStore, authRequired = co
     // the same setting instead of re-reading global config. Keeps the secured
     // and anonymous configurations testable in one process.
     res.locals.authRequired = authRequired
-    if (authRequired || res.locals.authenticated) return next()
+    if (res.locals.authenticated) return next()
 
     const raw = req.cookies?.[ANON_COOKIE]
     const { session, isNew } = store.resolve(typeof raw === 'string' ? raw : undefined)
@@ -131,7 +135,10 @@ export function actorId(res: Response): number | null {
 export function requireUser(_req: Request, res: Response, next: NextFunction): void {
   if (!res.locals.userId) {
     const authRequired = (res.locals.authRequired as boolean | undefined) ?? config.authRequired
-    if (authRequired) {
+    // An anonymous session is valid even under AUTH_REQUIRED=true (provider
+    // API-key mode is public); 401 there would read as "session lost" and log
+    // the operator out of a perfectly healthy connection.
+    if (authRequired && !res.locals.anonymous) {
       res.status(401).json({
         error: {
           code: 'UNAUTHORIZED',
@@ -194,8 +201,10 @@ export function requireRecentAuth(req: Request, res: Response, next: NextFunctio
   if (!sessionId) {
     return fail(req, res, new AppError({ code: 'UNAUTHORIZED', message: 'Not signed in' }), ctx)
   }
-  // Reauthentication means re-entering a dashboard password. Anonymous
-  // sessions have none, so the check is skipped only while auth is disabled.
+  // Reauthentication means re-entering a dashboard password; anonymous
+  // sessions have none, so the check is skipped for them even when
+  // AUTH_REQUIRED=true (public provider API-key sessions cannot re-verify).
+  if (res.locals.anonymous) return next()
   const authRequired = (res.locals.authRequired as boolean | undefined) ?? config.authRequired
   if (!authRequired) return next()
   const ttlMs = config.sessionReauthTtlMs

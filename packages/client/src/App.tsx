@@ -25,11 +25,13 @@ function Shell({ children }: { children: React.ReactNode }) {
   const location = useLocation()
 
   if (auth.me === null) return <PageLoader phase={auth.bootPhase ?? 'initializing'} />
-  // Account sign-in is only mandatory while the server enforces it. When auth
-  // is temporarily disabled, an anonymous visitor with a live connection may
-  // use the dashboard; account-only screens (settings/security/audit) still
-  // handle it themselves by showing sign-in prompts.
-  const shellRequiresAuth = (auth.me.authRequired ?? true) && !auth.me.authenticated
+  // Account sign-in is mandatory while the server enforces it — except for
+  // anonymous visitors who already hold a live provider-API-key session: that
+  // mode is public by design, and the provider session is their authorization.
+  // Account-only screens (settings/security/audit) still handle the missing
+  // account themselves by showing sign-in prompts.
+  const shellRequiresAuth =
+    (auth.me.authRequired ?? true) && !auth.me.authenticated && !(auth.connection?.connected === true)
   if (shellRequiresAuth) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />
   }

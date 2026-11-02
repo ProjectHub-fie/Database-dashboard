@@ -92,6 +92,11 @@ export class ProviderSessionManager {
     return this.sessions.get(sessionId)
   }
 
+  /** Whether the session ref owns a provider session (cheap existence check). */
+  has(sessionId: string): boolean {
+    return this.sessions.has(sessionId)
+  }
+
   /** Verify that a provider session belongs to the given dashboard user. */
   require(sessionId: string, userId: number | null): ProviderSession {
     const s = this.sessions.get(sessionId)
