@@ -87,6 +87,7 @@ export async function makeTestApp(
     atlasHttp?: MockAtlasHttpClient
     atlasOauth?: MockAtlasOauthClient
     authRequired?: boolean
+    adminApiOrigins?: string[]
   } = {},
 ): Promise<{
   app: express.Express
@@ -123,7 +124,11 @@ export async function makeTestApp(
   app.use(express.json({ limit: '1mb' }))
   app.use(requestLogMiddleware())
   app.get('/api/debug/requests', (_req, res) => res.json({ requests: recentRequests(100) }))
-  registerApiRoutes(app, { anonSessions, authRequired: opts.authRequired ?? true })
+  registerApiRoutes(app, {
+    anonSessions,
+    authRequired: opts.authRequired ?? true,
+    adminApiOrigins: opts.adminApiOrigins ?? [],
+  })
   app.use(errorHandler)
   forwardAsyncErrors(app)
   return { app, store, audit, auth, sessions, neon: neonHttp, atlas: atlasHttp, atlasOauth }

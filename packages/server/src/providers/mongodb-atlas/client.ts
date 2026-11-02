@@ -25,6 +25,7 @@ import {
   ProjectConnectionInfo,
   ProviderOperation,
 } from '../types.js'
+import crypto from 'node:crypto'
 import { AppError } from '../../lib/errors.js'
 import { createLogger } from '../../lib/logger.js'
 import { redact } from '../../lib/redact.js'
@@ -43,6 +44,8 @@ export interface AtlasHttpClient {
     query?: Record<string, string | number | boolean | undefined>
     body?: unknown
     accessToken: string
+    /** When set, use HTTP Digest auth (legacy programmatic API keys). */
+    digest?: { username: string; password: string } | null
   }): Promise<T>
 }
 
@@ -161,6 +164,7 @@ export class FetchAtlasHttpClient implements AtlasHttpClient {
     query?: Record<string, string | number | boolean | undefined>
     body?: unknown
     accessToken: string
+    digest?: { username: string; password: string } | null
   }): Promise<T> {
     const url = new URL(this.baseUrl + opts.path)
     if (opts.query) {
@@ -171,11 +175,30 @@ export class FetchAtlasHttpClient implements AtlasHttpClient {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), this.timeoutMs)
     try {
+      const isDigest = Boolean(opts.digest)
+
+      // Legacy programmatic API keys use HTTP Digest auth: the first request
+      // must be sent *without* credentials, and the server's 401 carries the
+      // WWW-Authenticate challenge (realm/nonce). We then re-send with the
+      // computed digest header.
+      let authHeaders: Record<string, string>
+      if (isDigest) {
+        const challenge = await readDigestChallenge(
+          url,
+          opts.method,
+          opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+          this.timeoutMs,
+        )
+        authHeaders = digestAuthorizationHeader(challenge, opts, url.pathname + url.search)
+      } else {
+        authHeaders = { Authorization: `Bearer ${opts.accessToken}` }
+      }
+
       const res = await fetch(url, {
         method: opts.method,
         headers: {
           Accept: 'application/vnd.atlas.2024-08-05+json',
-          Authorization: `Bearer ${opts.accessToken}`,
+          ...authHeaders,
           ...(opts.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         },
         body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
@@ -232,6 +255,154 @@ export class FetchAtlasHttpClient implements AtlasHttpClient {
 }
 
 // ---------------------------------------------------------------------------
+// HTTP Digest auth helpers (legacy programmatic API keys)
+// ---------------------------------------------------------------------------
+
+interface DigestChallenge {
+  realm: string
+  nonce: string
+  opaque?: string
+  qop?: string[]
+  algorithm?: string
+}
+
+/**
+ * Perform an unauthenticated first request so Atlas answers with a 401 plus
+ * `WWW-Authenticate: Digest …`. Returns the parsed challenge. Throws a safe
+ * AppError when Atlas does not issue a Digest challenge (e.g. the endpoint
+ * rejects the method with a plain 4xx first).
+ */
+async function readDigestChallenge(
+  url: URL,
+  method: string,
+  body: string | undefined,
+  timeoutMs: number,
+): Promise<DigestChallenge> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: {
+        Accept: 'application/vnd.atlas.2024-08-05+json',
+        ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      },
+      body,
+      signal: controller.signal,
+      redirect: 'error',
+    })
+    if (res.status !== 401) {
+      const text = await res.text().catch(() => '')
+      throw new AtlasApiError({
+        message: 'MongoDB Atlas did not require digest authentication for this resource.',
+        providerStatus: res.status,
+        detail: `Expected 401 + WWW-Authenticate, got ${res.status}${text ? ` (${String(text).slice(0, 200)})` : ''}`,
+      })
+    }
+    const hdr = res.headers.get('www-authenticate')
+    if (!hdr || !/digest/i.test(hdr)) {
+      throw new AtlasApiError({
+        message: 'MongoDB Atlas did not issue a digest authentication challenge.',
+        providerStatus: 401,
+        detail: `WWW-Authenticate was '${String(hdr).slice(0, 200)}'`,
+      })
+    }
+    return parseDigestChallenge(hdr)
+  } catch (err) {
+    if (err instanceof AppError) throw err
+    const e = err as { name?: string; message?: string }
+    if (e && (e.name === 'AbortError' || /abort/i.test(String(e.message)))) {
+      throw new AppError({
+        code: 'CONNECTION_FAILED',
+        message: 'The MongoDB Atlas request timed out',
+        detail: 'Atlas digest challenge aborted after timeout',
+      })
+    }
+    throw new AppError({
+      code: 'PROVIDER_ERROR',
+      message: 'Unexpected error communicating with MongoDB Atlas',
+      detail: String(e?.message ?? 'unknown'),
+    })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+export function parseDigestChallenge(header: string): DigestChallenge {
+  // Strip the leading "Digest " keyword.
+  const value = header.replace(/^\s*digest\s+/i, '')
+  const realm = /\brealm="([^"]*)"/i.exec(value)?.[1] ?? ''
+  const nonce = /\bnonce="([^"]*)"/i.exec(value)?.[1] ?? ''
+  const opaque = /\bopaque="([^"]*)"/i.exec(value)?.[1]
+  const algorithm = /\balgorithm=([^\s,]+)/i.exec(value)?.[1]?.replace(/"/g, '')
+  const stale = /\bstale=(true|false)/i.test(value)
+  void stale
+  const qopRaw = /\bqop="([^"]*)"/i.exec(value)?.[1]
+  const qop = qopRaw ? qopRaw.split(',').map((s) => s.trim()) : undefined
+  if (!realm || !nonce) {
+    throw new AtlasApiError({
+      message: 'MongoDB Atlas returned an incomplete digest challenge.',
+      providerStatus: 401,
+      detail: `realm/nonce missing from: ${value.slice(0, 200)}`,
+    })
+  }
+  return { realm, nonce, opaque, qop, algorithm }
+}
+
+/**
+ * Compute the `Authorization: Digest …` header (RFC 2617 with qop=auth).
+ */
+export function digestAuthorizationHeader(
+  challenge: DigestChallenge,
+  opts: { digest?: { username: string; password: string } | null; method: string },
+  uri: string,
+): Record<string, string> {
+  if (!opts.digest) return {}
+  const { username, password } = opts.digest
+  const realm = challenge.realm
+  const nonce = challenge.nonce
+
+  const md5 = (s: string) => crypto.createHash('md5').update(s, 'utf8').digest('hex')
+  // HA1 = MD5(username:realm:password)
+  const ha1 = md5(`${username}:${realm}:${password}`)
+  // HA2 = MD5(method:uri)
+  const ha2 = md5(`${opts.method}:${uri}`)
+
+  const qop = challenge.qop?.includes('auth') ? 'auth' : challenge.qop?.[0]
+  let response: string
+  if (qop === 'auth') {
+    const nc = '00000001'
+    const cnonce = crypto.randomBytes(8).toString('hex')
+    // response = MD5(HA1:nonce:nc:cnonce:qop:HA2)
+    response = md5(`${ha1}:${nonce}:${nc}:${cnonce}:${qop}:${ha2}`)
+    const parts = [
+      `username="${username}"`,
+      `realm="${realm}"`,
+      `nonce="${nonce}"`,
+      `uri="${uri}"`,
+      `qop=${qop}`,
+      `nc=${nc}`,
+      `cnonce="${cnonce}"`,
+      `response="${response}"`,
+    ]
+    if (challenge.opaque) parts.push(`opaque="${challenge.opaque}"`)
+    return { Authorization: `Digest ${parts.join(', ')}` }
+  }
+
+  // No qop in the challenge: response = MD5(HA1:nonce:HA2)
+  response = md5(`${ha1}:${nonce}:${ha2}`)
+  const parts = [
+    `username="${username}"`,
+    `realm="${realm}"`,
+    `nonce="${nonce}"`,
+    `uri="${uri}"`,
+    `response="${response}"`,
+  ]
+  if (challenge.opaque) parts.push(`opaque="${challenge.opaque}"`)
+  return { Authorization: `Digest ${parts.join(', ')}` }
+}
+
+// ---------------------------------------------------------------------------
 // Control plane adapter
 // ---------------------------------------------------------------------------
 
@@ -255,6 +426,9 @@ export class MongoAtlasControlPlane implements ControlPlaneAdapter {
   private readonly http: AtlasHttpClient
   private readonly oauth: AtlasOauthClient
   private readonly tokenTtlMs: number
+  // Set for legacy programmatic API keys (publicKey:privateKey), which use
+  // HTTP Digest authentication instead of a service-account OAuth exchange.
+  private readonly digest?: { username: string; password: string } | null
   private accessToken: string | null = null
   private tokenExpiresAt = 0
 
@@ -266,9 +440,15 @@ export class MongoAtlasControlPlane implements ControlPlaneAdapter {
     this.http = opts.http ?? new FetchAtlasHttpClient()
     this.oauth = opts.oauth ?? new FetchAtlasOauthClient()
     this.tokenTtlMs = opts.tokenTtlMs ?? 55 * 60 * 1000
+    // Service-account client IDs always start with `mdb_sa_id_`; anything else
+    // is a legacy programmatic API key pair (public:private) → digest auth.
+    this.digest = clientId.toLowerCase().startsWith('mdb_sa_id_')
+      ? null
+      : { username: clientId, password: clientSecret }
   }
 
   private async token(): Promise<string> {
+    if (this.digest) return ''
     if (this.accessToken && Date.now() < this.tokenExpiresAt) return this.accessToken
     const { accessToken, expiresIn } = await this.oauth.exchange(this.clientId, this.clientSecret)
     this.accessToken = accessToken
@@ -276,14 +456,30 @@ export class MongoAtlasControlPlane implements ControlPlaneAdapter {
     return accessToken
   }
 
-  /** Verify the credential by exchanging it; independently of the orgs list. */
+  /** Issue an Atlas API request with the auth strategy for this credential. */
+  private async req<T>(
+    opts: Omit<Parameters<AtlasHttpClient['request']>[0], 'accessToken' | 'digest'>,
+  ): Promise<T> {
+    const token = await this.token()
+    return this.http.request<T>({ ...opts, accessToken: token, digest: this.digest ?? null })
+  }
+
+  /** Verify the credential; independently of the orgs list. */
   async validateApiKey(): Promise<{
     organizations?: Organization[]
     accountId?: string
     organizationScoped?: boolean
   }> {
     await this.token() // throws 401 / rate limit when invalid
-    const orgs = await this.listOrganizations().catch(() => [])
+    // A real Atlas auth failure (401/403) means the credential is invalid and
+    // must fail validation. Non-auth failures (e.g. the caller cannot list orgs
+    // for a project-scoped key) are tolerated so the key can still be used.
+    const orgs = await this.listOrganizations().catch((e) => {
+      if (e instanceof AtlasApiError && (e.providerStatus === 401 || e.providerStatus === 403)) {
+        throw e
+      }
+      return []
+    })
     return {
       accountId: this.clientId,
       organizations: orgs,
@@ -292,23 +488,19 @@ export class MongoAtlasControlPlane implements ControlPlaneAdapter {
   }
 
   async listOrganizations(): Promise<Organization[]> {
-    const token = await this.token()
-    const { results } = await this.http.request<{ results?: Array<{ id: string; name?: string }> }>({
+    const { results } = await this.req<{ results?: Array<{ id: string; name?: string }> }>({
       method: 'GET',
       path: '/orgs',
       query: { itemsPerPage: 100 },
-      accessToken: token,
     })
     return (results ?? []).map((o) => ({ id: o.id, name: o.name ?? o.id }))
   }
 
   async listProjects(orgId?: string): Promise<Project[]> {
-    const token = await this.token()
-    const { results } = await this.http.request<{ results?: AtlasGroup[] }>({
+    const { results } = await this.req<{ results?: AtlasGroup[] }>({
       method: 'GET',
       path: '/groups',
       query: { itemsPerPage: 100 },
-      accessToken: token,
     })
     return (results ?? [])
       .filter((g) => !orgId || g.orgId === orgId)
@@ -316,11 +508,9 @@ export class MongoAtlasControlPlane implements ControlPlaneAdapter {
   }
 
   async getProject(input: { projectId: string }): Promise<Project> {
-    const token = await this.token()
-    const group = await this.http.request<AtlasGroup>({
+    const group = await this.req<AtlasGroup>({
       method: 'GET',
       path: `/groups/${encodeURIComponent(input.projectId)}`,
-      accessToken: token,
     })
     return normalizeProject(group)
   }
@@ -332,14 +522,12 @@ export class MongoAtlasControlPlane implements ControlPlaneAdapter {
         message: 'MongoDB Atlas project creation requires an organization id.',
       })
     }
-    const token = await this.token()
     const body: Record<string, unknown> = { name: input.name, orgId: input.orgId }
     if (input.region) body.regionUsageRestrictions = [input.region]
-    const group = await this.http.request<AtlasGroup>({
+    const group = await this.req<AtlasGroup>({
       method: 'POST',
       path: '/groups',
       body,
-      accessToken: token,
     })
     return {
       project: normalizeProject(group),
@@ -348,11 +536,9 @@ export class MongoAtlasControlPlane implements ControlPlaneAdapter {
   }
 
   async deleteProject(input: { projectId: string }): Promise<{ operation: ProviderOperation }> {
-    const token = await this.token()
-    await this.http.request<unknown>({
+    await this.req<unknown>({
       method: 'DELETE',
       path: `/groups/${encodeURIComponent(input.projectId)}`,
-      accessToken: token,
     })
     return {
       operation: { id: `atlas-delete-${input.projectId}`, action: 'DELETE_PROJECT', status: 'finished' },
@@ -361,11 +547,9 @@ export class MongoAtlasControlPlane implements ControlPlaneAdapter {
 
   /** Atlas clusters are the concrete deployments; they stand in for "branches". */
   async listBranches(input: { projectId: string }): Promise<Branch[]> {
-    const token = await this.token()
-    const { results } = await this.http.request<{ results?: AtlasCluster[] }>({
+    const { results } = await this.req<{ results?: AtlasCluster[] }>({
       method: 'GET',
       path: `/groups/${encodeURIComponent(input.projectId)}/clusters`,
-      accessToken: token,
     })
     return (results ?? []).map((c) => normalizeCluster(c, input.projectId))
   }
@@ -406,11 +590,9 @@ export class MongoAtlasControlPlane implements ControlPlaneAdapter {
   }
 
   async listRoles(input: { projectId: string; branchId?: string }): Promise<DatabaseRole[]> {
-    const token = await this.token()
-    const { results } = await this.http.request<{ results?: AtlasDatabaseUser[] }>({
+    const { results } = await this.req<{ results?: AtlasDatabaseUser[] }>({
       method: 'GET',
       path: `/groups/${encodeURIComponent(input.projectId)}/databaseUsers`,
-      accessToken: token,
     })
     return (results ?? []).map((u) => ({
       name: u.username,
@@ -435,11 +617,9 @@ export class MongoAtlasControlPlane implements ControlPlaneAdapter {
   }
 
   async listEndpoints(input: { projectId: string }): Promise<Endpoint[]> {
-    const token = await this.token()
-    const { results } = await this.http.request<{ results?: AtlasCluster[] }>({
+    const { results } = await this.req<{ results?: AtlasCluster[] }>({
       method: 'GET',
       path: `/groups/${encodeURIComponent(input.projectId)}/clusters`,
-      accessToken: token,
     })
     return (results ?? []).map((c) => ({
       id: c.id ?? c.name,
@@ -486,11 +666,9 @@ export class MongoAtlasControlPlane implements ControlPlaneAdapter {
   }
 
   private async getCluster(projectId: string, clusterName: string): Promise<AtlasCluster> {
-    const token = await this.token()
-    const { results } = await this.http.request<{ results?: AtlasCluster[] }>({
+    const { results } = await this.req<{ results?: AtlasCluster[] }>({
       method: 'GET',
       path: `/groups/${encodeURIComponent(projectId)}/clusters`,
-      accessToken: token,
     })
     const found = (results ?? []).find((c) => c.name === clusterName)
     if (!found) {

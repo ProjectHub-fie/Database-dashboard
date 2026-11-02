@@ -46,7 +46,7 @@ describe('Application authentication and authorization', () => {
     expect(res.status).toBe(403)
   })
 
-  it('never exposes password hashes or roles in /api/auth/me', async () => {
+  it('never exposes password hashes in /api/auth/me', async () => {
     const t = await makeTestApp()
     const seed = await seedUser(t.store, 'no-leak', 'password-123456!')
     const { agent } = await login(t.app, seed.username, seed.password)
@@ -55,10 +55,13 @@ describe('Application authentication and authorization', () => {
     const raw = JSON.stringify(res.body)
     expect(raw).not.toContain('passwordHash')
     expect(raw).not.toContain('$argon2')
-    expect(raw).not.toContain('"role"')
+    // `role` is deliberately exposed: the client uses it to gate the admin
+    // portal. It is not a secret (unlike the password hash / argon2 output).
+    expect(raw).toContain('"role"')
     expect(res.body.user).toEqual({
       id: expect.any(Number),
       username: 'no-leak',
+      role: 'admin',
       mustChangePassword: true,
     })
   })

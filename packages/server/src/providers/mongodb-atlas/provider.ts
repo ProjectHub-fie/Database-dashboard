@@ -24,6 +24,7 @@ import {
 } from '../types.js'
 import { MongodbAdapter, MongoConn } from '../../adapters/mongodb.js'
 import { verifyMongodbConnectionUrl } from '../../security/netlib.js'
+import type { PinnedVerifiedHost } from '../../security/netlib.js'
 import { MongoAtlasControlPlane, MongoAtlasControlPlaneOptions } from './client.js'
 import { AppError } from '../../lib/errors.js'
 import { MongoQuerySession } from '../../adapters/mongo-session.js'
@@ -120,20 +121,32 @@ export class MongoDbProvider implements Provider<MongoConn> {
     const { database, role } = parseMongoUri(input.connectionString)
 
     const { MongoClient: DriverClient } = await import('mongodb')
-    const pinned = verified.verified.address
+    const pin = srvPinFor(verified.host, verified.verified)
 
     /**
-     * Custom DNS lookup that always returns the pinned address. The driver
-     * still verifies the TLS certificate against the original hostname, so
-     * this is the same DNS-rebinding defence as the Postgres path: connect to
-     * the pinned IP, but prove identity by hostname.
+     * Custom DNS lookup that returns the pinned address for whatever hostname
+     * the driver asks about. For SRV URLs the driver asks for the shard
+     * hostnames, so we serve the per-shard pin; for plain mongodb:// URLs every
+     * hostname maps to the single verified address. The driver still verifies
+     * the TLS certificate against the original hostname, so this is the same
+     * DNS-rebinding defence as the Postgres path: connect to the pinned IP,
+     * but prove identity by hostname.
      */
     const lookup: import('node:net').LookupFunction = (
-      _hostname,
-      _opts,
+      hostname,
+      opts,
       cb,
     ) => {
-      cb(null, pinned, 4)
+      const addr = pin.get(String(hostname).replace(/\.$/, '')) ?? pin.get('*') ?? null
+      if (!addr) {
+        cb(new Error(`No pinned address for Mongo host '${hostname}'`), '', 4)
+        return
+      }
+      if (opts && (opts as { all?: boolean }).all) {
+        cb(null, [{ address: addr, family: 4 }] as unknown as string, 4)
+        return
+      }
+      cb(null, addr, 4)
     }
 
     const client = new DriverClient(input.connectionString, {
@@ -192,6 +205,28 @@ export class MongoDbProvider implements Provider<MongoConn> {
   createConnectionSession(ref: ConnectionRef<MongoConn>): QuerySession {
     return new MongoQuerySession(ref.conn, this.database)
   }
+}
+
+/**
+ * Build the hostname → pinned address map used by the driver's lookup hook.
+ *
+ * SRV verification returns a per-shard map; a plain mongodb:// URL only has the
+ * single verified host, so every hostname aliases to that address (the `*`
+ * wildcard fallback). Callers pass the URL's original host here because the
+ * driver may ask for either the base host (mongodb://) or shard hostnames
+ * (mongodb+srv://).
+ */
+function srvPinFor(baseHost: string, verified: PinnedVerifiedHost): Map<string, string> {
+  const srvMap = (verified as { srvMap?: Map<string, string> }).srvMap
+  if (srvMap && srvMap.size > 0) {
+    const out = new Map(srvMap)
+    out.set(baseHost, verified.address)
+    return out
+  }
+  const out = new Map<string, string>()
+  out.set(baseHost, verified.address)
+  out.set('*', verified.address)
+  return out
 }
 
 function splitCredential(cred: string): { clientId: string; secret: string } {

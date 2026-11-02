@@ -133,7 +133,11 @@ export async function createApp(): Promise<{
 
   // Every /api route, mounted in one shared place so the deployed server and
   // the test harness cannot drift apart.
-  registerApiRoutes(app, { anonSessions, authRequired: config.authRequired })
+  registerApiRoutes(app, {
+    anonSessions,
+    authRequired: config.authRequired,
+    adminApiOrigins: config.adminApiOrigins,
+  })
 
   // Serve built frontend in production.
   const dist = path.resolve(__dirname, '../../client/dist')

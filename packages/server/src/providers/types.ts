@@ -126,6 +126,13 @@ export interface Project {
   platformId?: string
   createdAt?: string
   updatedAt?: string
+  /**
+   * Aggregate compute state for the project, derived from its endpoints'
+   * `current_state` (e.g. `active`, `paused`, `provisioning`, `idle`). A
+   * project whose endpoints are `paused` has hit its quota or idle timeout —
+   * show it prominently so operators know to expect cold-start latency.
+   */
+  status?: string
   raw?: unknown
 }
 

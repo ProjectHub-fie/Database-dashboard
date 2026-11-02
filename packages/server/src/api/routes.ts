@@ -9,6 +9,7 @@ import { sqlRouter } from './sql-router.js'
 import { schemaRouter } from './schema-router.js'
 import { controlPlaneRouter } from './control-plane-router.js'
 import { auditRouter } from './audit-router.js'
+import { adminRouter } from './admin-router.js'
 import type { AnonymousSessionStore } from '../security/anon-session.js'
 
 /**
@@ -42,6 +43,8 @@ export interface ApiRouteOptions {
    * while keeping per-visitor session isolation and CSRF. Defaults to config.
    */
   authRequired?: boolean
+  /** Base URLs probed by the admin portal to verify both API origins. */
+  adminApiOrigins?: string[]
 }
 
 /**
@@ -90,6 +93,7 @@ export function registerApiRoutes(app: Express, opts: ApiRouteOptions): void {
   app.use('/api/schema', schemaRouter())
   app.use('/api/control', controlPlaneRouter())
   app.use('/api/audit', auditRouter())
+  app.use('/api/admin', adminRouter({ adminApiOrigins: opts.adminApiOrigins ?? [] }))
 
   // `/api/healthz` is the same probe reached through the deployment's /api
   // proxy, so one request proves the proxy function AND the upstream API are

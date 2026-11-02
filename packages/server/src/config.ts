@@ -14,6 +14,12 @@ export interface AppConfig {
   maxUploadBytes: number
   trustProxy: boolean
   trustProxyHops: number
+  /**
+   * API base URLs the admin portal probes (`API_ORIGIN`, optionally
+   * comma-separated) so an operator can confirm the deployment proxy and the
+   * API both answer `/api/healthz`.
+   */
+  adminApiOrigins: string[]
   dataDir: string
   serveClient: boolean
   /**
@@ -71,6 +77,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     // A hop count, never `true`. `true` would trust the left-most X-Forwarded-For
     // entry, which a client can forge to bypass IP rate limiting.
     trustProxyHops: Math.max(1, int(env.TRUST_PROXY_HOPS, 1)),
+    // The admin portal probes API_ORIGIN (the persistent API host) to confirm
+    // both the deployment proxy and the API are serving. Render hosts can't run
+    // a second API, so there is deliberately no separate admin-origin list.
+    adminApiOrigins: (env.API_ORIGIN ?? '')
+      .split(',')
+      .map((s) => s.trim().replace(/\/+$/, ''))
+      .filter(Boolean),
     dataDir,
     // Static SPA hosting is on by default in production. The override exists so
     // staging/self-hosted dev boxes can serve the built client from this server.
