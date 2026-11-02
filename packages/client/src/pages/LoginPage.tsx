@@ -11,6 +11,8 @@ import {
   supportsAuthMethod,
   catalogIssueMessage,
   reconcileProviderSelection,
+  urlPlaceholderFor,
+  apiKeyPlaceholderFor,
 } from '../lib/provider-catalog'
 import { Footer } from '../components/Footer'
 import { ApiUnreachableBanner } from '../components/ApiUnreachableBanner'
@@ -665,12 +667,13 @@ function UrlPanel(props: {
   onSubmit: (e: FormEvent) => void
   onSignIn: () => void
 }) {
+  const selected = props.providers?.find((p) => p.id === props.providerId)
   return (
     <form onSubmit={props.onSubmit}>
       <PanelHeading
         icon={<Database className="h-4 w-4" />}
         title="Database URL"
-        subtitle="Direct PostgreSQL access to exactly one database."
+        subtitle="Direct database access to exactly one database."
       />
 
       <div className="mt-5 space-y-4">
@@ -702,8 +705,8 @@ function UrlPanel(props: {
             show={props.show}
             onToggle={() => props.setShow(!props.show)}
             mono
-            placeholder="postgresql://user:password@ep-xxx.us-east-2.aws.neon.tech/neondb?sslmode=require"
-            ariaLabel="PostgreSQL connection string"
+            placeholder={selected ? urlPlaceholderFor(selected) : 'Paste your database connection string'}
+            ariaLabel="Database connection string"
           />
         </div>
 
@@ -782,6 +785,7 @@ function ApiPanel(props: {
   onOpen: () => void
 }) {
   const docs = props.providers?.find((p) => p.id === props.providerId)?.apiDocs
+  const selected = props.providers?.find((p) => p.id === props.providerId)
 
   return (
     <form onSubmit={props.onSubmit}>
@@ -809,7 +813,7 @@ function ApiPanel(props: {
             show={props.show}
             onToggle={() => props.setShow(!props.show)}
             mono
-            placeholder="neon_xxxxxxxxxxxxxxxx"
+            placeholder={selected ? apiKeyPlaceholderFor(selected) : 'Paste your provider API key'}
             ariaLabel="Provider API key"
           />
           <p className="mt-2 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
