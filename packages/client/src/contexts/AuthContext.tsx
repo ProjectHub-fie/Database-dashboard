@@ -10,7 +10,7 @@ export interface MeResponse {
   authRequired?: boolean
   /** True when this visitor holds an anonymous connection session. */
   anonymous?: boolean
-  user?: { id: number; username: string; mustChangePassword: boolean }
+  user?: { id: number; username: string; role: string; mustChangePassword: boolean }
 }
 
 interface AuthContextValue {

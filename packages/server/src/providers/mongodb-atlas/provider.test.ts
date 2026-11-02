@@ -27,10 +27,23 @@ describe('MongoDB Atlas provider', () => {
       atlas: { http: atlas, oauth },
       skipConnectionUrlHostValidation: true,
     })
-    const control = provider.controlPlaneFor('client-id-1:client-secret-1')
+    const control = provider.controlPlaneFor('mdb_sa_id_1:client-secret-1')
     const result = await control.validateApiKey()
     expect(oauth._exchanges).toHaveLength(1)
-    expect(oauth._exchanges[0]).toEqual({ clientId: 'client-id-1', clientSecret: 'client-secret-1' })
+    expect(oauth._exchanges[0]).toEqual({ clientId: 'mdb_sa_id_1', clientSecret: 'client-secret-1' })
+    expect(result.organizationScoped).toBe(true)
+  })
+
+  it('routes a legacy programmatic API key pair to digest auth (no OAuth exchange)', async () => {
+    const provider = new MongoDbProvider({
+      atlas: { http: atlas, oauth },
+      skipConnectionUrlHostValidation: true,
+    })
+    const control = provider.controlPlaneFor('legacypubkey:2c130c23-e6b6-4da8-a93f-a8bf33218830')
+    // The mock HTTP client ignores `digest` and answers directly, so validation
+    // succeeds without ever touching the OAuth (service-account) exchange.
+    const result = await control.validateApiKey()
+    expect(oauth._exchanges).toHaveLength(0)
     expect(result.organizationScoped).toBe(true)
   })
 
@@ -55,7 +68,7 @@ describe('MongoDB Atlas provider', () => {
       atlas: { http: atlas, oauth },
       skipConnectionUrlHostValidation: true,
     })
-    const out = await provider.connect({ kind: 'api', apiKey: 'cid:secret' })
+    const out = await provider.connect({ kind: 'api', apiKey: 'mdb_sa_id_cid:secret' })
     expect(out.accountOnly).toBe(true)
     expect(out.connection).toBeNull()
     expect(out.metadata.host).toBe('cloud.mongodb.com')

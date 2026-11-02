@@ -201,13 +201,15 @@ export function authRouter(): Router {
     }
     const account = res.locals.account as SessionAccount
     ctx.providerSessions.touch(String(res.locals.sessionRef))
-    // Never leak password hashes, roles or session internals to the browser.
+    // Never leak password hashes or session internals to the browser. The role
+    // is exposed because the client uses it to gate the admin portal.
     res.json({
       authenticated: true,
       authRequired: effectiveAuthRequired(res),
       user: {
         id: account.user.id,
         username: account.user.username,
+        role: account.user.role,
         mustChangePassword: Boolean(account.user.mustChangePassword),
       },
     })

@@ -24,6 +24,37 @@ const createBranchSchema = z.object({
 })
 
 /**
+ * Rank an endpoint compute state so the aggregate picks the most informative
+ * project badge rather than the first row returned.
+ */
+const STATE_RANK: Record<string, number> = {
+  paused: 4,
+  provisioning: 3,
+  init: 3,
+  active: 2,
+  ready: 2,
+  idle: 1,
+  sleeping: 1,
+}
+
+export interface EndpointStateInfo {
+  state: string
+}
+
+/**
+ * Reduce a project's endpoint states to a single badge string. Pause is the
+ * most important signal (quota exhausted / idle timeout); provisioning and
+ * active follow; anything left (`idle`, `sleeping`, `unknown`) is informational.
+ */
+export function projectStatusFromEndpoints(endpoints: EndpointStateInfo[]): string {
+  if (endpoints.length === 0) return 'not-ready'
+  const ranked = [...endpoints]
+    .map((e) => ({ state: e.state.toLowerCase(), rank: STATE_RANK[e.state.toLowerCase()] ?? 0 }))
+    .sort((a, b) => b.rank - a.rank || (a.state === 'paused' ? -1 : 1))
+  return ranked[0]!.state
+}
+
+/**
  * Neon control-plane routes (API-key mode only). In database-URL mode the
  * dashboard intentionally exposes no account-level management.
  */
@@ -67,7 +98,20 @@ export function controlPlaneRouter(): Router {
     const { cp } = control(req, res)
     const orgId = typeof req.query.orgId === 'string' && req.query.orgId ? req.query.orgId : undefined
     const projects = await cp.listProjects(orgId)
-    res.json({ projects })
+    // Attach an aggregate compute status per project from its endpoints
+    // (the pause/quota state lives on the endpoint, not the project object).
+    // Failures are tolerated: the badge is best-effort, missing only matters
+    // if the project was deleted between the two calls.
+    const settled = await Promise.allSettled(
+      projects.map(async (p) => [p.id, projectStatusFromEndpoints(await cp.listEndpoints({ projectId: p.id }))] as const),
+    )
+    const statuses = new Map<string, string>()
+    for (const r of settled) {
+      if (r.status === 'fulfilled') statuses.set(r.value[0], r.value[1])
+    }
+    res.json({
+      projects: projects.map((p) => ({ ...p, status: statuses.get(p.id) ?? p.status })),
+    })
   })
 
   // GET /api/control/projects/:projectId

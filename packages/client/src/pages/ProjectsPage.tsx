@@ -6,8 +6,30 @@ import { useToast } from '../contexts/ToastContext'
 import { api, ApiError } from '../lib/api'
 import { Project, Organization, ProviderOperation } from '../lib/types'
 import { Button, Card, Badge, EmptyState, Input, Label, Select, Modal, ConfirmDialog, Skeleton } from '../components/ui'
-import { FolderOpen, Plus, Globe2, MapPin, Trash2, Clock } from 'lucide-react'
+import { FolderOpen, Plus, Globe2, MapPin, Trash2, Clock, Activity, PauseCircle } from 'lucide-react'
 import { capabilitiesOf } from '../lib/capabilities'
+
+const STATUS_PRESENT: Record<string, { label: string; tone: 'green' | 'amber' | 'rose' | 'sky' | 'slate' }> = {
+  active: { label: 'Active', tone: 'green' },
+  ready: { label: 'Ready', tone: 'green' },
+  paused: { label: 'Paused', tone: 'amber' },
+  provisioning: { label: 'Provisioning', tone: 'sky' },
+  init: { label: 'Starting', tone: 'sky' },
+  idle: { label: 'Idle', tone: 'slate' },
+  sleeping: { label: 'Sleeping', tone: 'slate' },
+  'not-ready': { label: 'Not ready', tone: 'slate' },
+}
+
+function ProjectStatusBadge({ status }: { status?: string }) {
+  if (!status) return null
+  const meta = STATUS_PRESENT[status] ?? { label: status, tone: 'slate' as const }
+  const Icon = meta.tone === 'amber' ? PauseCircle : Activity
+  return (
+    <Badge tone={meta.tone}>
+      <Icon className="h-3 w-3" /> {meta.label}
+    </Badge>
+  )
+}
 
 export function ProjectsPage() {
   const auth = useAuth()
@@ -179,6 +201,7 @@ export function ProjectsPage() {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-semibold text-slate-900 dark:text-slate-100">{p.name}</span>
+                    <ProjectStatusBadge status={p.status} />
                     {p.platformId && <span className="font-mono text-[10px] text-slate-400">{p.platformId}</span>}
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-1.5">

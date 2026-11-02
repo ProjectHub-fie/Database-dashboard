@@ -55,6 +55,7 @@ const NAV: NavItem[] = [
   { to: '/io', label: 'Import / Export', icon: <ArrowUpDown className="h-4 w-4" />, needsDatabase: true },
   { to: '/settings', label: 'Settings', icon: <Settings className="h-4 w-4" /> },
   { to: '/security', label: 'Security & Audit', icon: <ShieldCheck className="h-4 w-4" /> },
+  { to: '/ad', label: 'Administration', icon: <ShieldCheck className="h-4 w-4" /> },
 ]
 
 function SidebarLink({ item, onClick, collapsed }: { item: NavItem; onClick?: () => void; collapsed?: boolean }) {
@@ -94,7 +95,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const hasDatabase = connected && auth.connection?.accountOnly !== true
   // With no database connection only account-level pages are usable; showing
   // database pages would just bounce the operator back to the connect screen.
-  const ACCOUNT_ONLY_NAV = new Set(['/settings', '/security'])
+  const ACCOUNT_ONLY_NAV = new Set(['/settings', '/security', '/ad'])
   const visibleNav = NAV.filter(
     (n) =>
       !(n.controlOnly && !isControlPlane) &&

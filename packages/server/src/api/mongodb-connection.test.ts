@@ -31,7 +31,7 @@ describe('MongoDB Atlas connection modes', () => {
 
     const res = await agent.post(
       '/api/connections/api',
-      { providerId: 'mongodb-atlas', apiKey: 'client-1:secret-1' },
+      { providerId: 'mongodb-atlas', apiKey: 'mdb_sa_id_client1:secret-1' },
       csrfToken,
     )
     expect(res.status).toBe(200)
@@ -41,7 +41,7 @@ describe('MongoDB Atlas connection modes', () => {
     expect(res.body.metadata.host).toBe('cloud.mongodb.com')
     // The OAuth exchange really ran with the split credential.
     expect(t.atlasOauth._exchanges).toHaveLength(1)
-    expect(t.atlasOauth._exchanges[0]).toEqual({ clientId: 'client-1', clientSecret: 'secret-1' })
+    expect(t.atlasOauth._exchanges[0]).toEqual({ clientId: 'mdb_sa_id_client1', clientSecret: 'secret-1' })
     expect(JSON.stringify(res.body)).not.toContain('client-1')
     expect(JSON.stringify(res.body)).not.toContain('secret-1')
   })
@@ -56,7 +56,7 @@ describe('MongoDB Atlas connection modes', () => {
     }))
     const seed = await seedUser(t.store, 'mongo-api-user-2')
     const { agent, csrfToken } = await login(t.app, seed.username, seed.password)
-    await agent.post('/api/connections/api', { providerId: 'mongodb-atlas', apiKey: 'cid:secret' }, csrfToken)
+    await agent.post('/api/connections/api', { providerId: 'mongodb-atlas', apiKey: 'mdb_sa_id_cid:secret' }, csrfToken)
     const projects = await agent.get('/api/control/projects')
     expect(projects.status).toBe(200)
     expect(projects.body.projects[0].name).toBe('Mongo Project')
@@ -70,7 +70,7 @@ describe('MongoDB Atlas connection modes', () => {
     const t = await makeTestApp()
     const seed = await seedUser(t.store, 'mongo-api-user-3')
     const { agent, csrfToken } = await login(t.app, seed.username, seed.password)
-    await agent.post('/api/connections/api', { providerId: 'mongodb-atlas', apiKey: 'cid:secret' }, csrfToken)
+    await agent.post('/api/connections/api', { providerId: 'mongodb-atlas', apiKey: 'mdb_sa_id_cid:secret' }, csrfToken)
 
     for (const path of ['/api/data/stats', '/api/data/tree', '/api/data/tables', '/api/data/roles']) {
       const res = await agent.get(path)
@@ -109,7 +109,7 @@ describe('MongoDB Atlas connection modes', () => {
     const { agent, csrfToken } = await login(t.app, seed.username, seed.password)
     const res = await agent.post(
       '/api/connections/api',
-      { providerId: 'mongodb-atlas', apiKey: 'client-1:wrong-secret' },
+      { providerId: 'mongodb-atlas', apiKey: 'mdb_sa_id_client1:wrong-secret' },
       csrfToken,
     )
     expect(res.status).toBeGreaterThanOrEqual(400)
@@ -124,7 +124,7 @@ describe('MongoDB Atlas connection modes', () => {
     const t = await makeTestApp()
     const seed = await seedUser(t.store, 'mongo-caps-user')
     const { agent, csrfToken } = await login(t.app, seed.username, seed.password)
-    await agent.post('/api/connections/api', { providerId: 'mongodb-atlas', apiKey: 'cid:secret' }, csrfToken)
+    await agent.post('/api/connections/api', { providerId: 'mongodb-atlas', apiKey: 'mdb_sa_id_cid:secret' }, csrfToken)
     const status = await agent.get('/api/connections/status')
     expect(status.body.connected).toBe(true)
     // control capability survives, sql does not.

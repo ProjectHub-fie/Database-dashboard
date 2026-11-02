@@ -116,13 +116,13 @@ export class Store {
 
   // ---- users -------------------------------------------------------------
 
-  createUser(username: string, passwordHash: string): User {
+  createUser(username: string, passwordHash: string, role = 'admin'): User {
     const now = Date.now()
     const info = this.db
       .prepare(
         'INSERT INTO users (username, password_hash, role, created_at, must_change_password) VALUES (?, ?, ?, ?, 1)',
       )
-      .run(username, passwordHash, 'admin', now)
+      .run(username, passwordHash, role, now)
     return this.getUserById(Number(info.lastInsertRowid))!
   }
 
@@ -139,6 +139,11 @@ export class Store {
   countUsers(): number {
     const row = this.db.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }
     return row.n
+  }
+
+  listUsers(): User[] {
+    const rows = this.db.prepare('SELECT * FROM users ORDER BY created_at ASC').all() as Row[]
+    return rows.map(mapUser)
   }
 
   updatePassword(userId: number, passwordHash: string): void {

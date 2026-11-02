@@ -33,7 +33,7 @@ describe('Auth-gate contract (AUTH_REQUIRED=true)', () => {
     const t = await makeTestApp({ authRequired: true })
     const res = await new (await import('../test/test-app.js')).TestAgent(t.app).post(
       '/api/connections/api',
-      { providerId: 'mongodb-atlas', apiKey: 'cid:secret' },
+      { providerId: 'mongodb-atlas', apiKey: 'mdb_sa_id_cid:secret' },
     )
     // CSRF is required even for the public path (TestAgent sends no CSRF).
     expect(res.status).toBe(403)
@@ -54,7 +54,7 @@ describe('Auth-gate contract (AUTH_REQUIRED=true)', () => {
       .post('/api/connections/api')
       .set('Cookie', cookie)
       .set('x-csrf-token', csrf)
-      .send({ providerId: 'mongodb-atlas', apiKey: 'cid:secret' })
+      .send({ providerId: 'mongodb-atlas', apiKey: 'mdb_sa_id_cid:secret' })
     expect(res.status).toBe(200)
     expect(res.body.connected).toBe(true)
     expect(res.body.accountOnly).toBe(true)
@@ -92,7 +92,7 @@ describe('Auth-gate contract (AUTH_REQUIRED=true)', () => {
       .post('/api/connections/api')
       .set('Cookie', cookies)
       .set('x-csrf-token', csrf)
-      .send({ providerId: 'mongodb-atlas', apiKey: 'cid:secret' })
+      .send({ providerId: 'mongodb-atlas', apiKey: 'mdb_sa_id_cid:secret' })
     expect(connected.status).toBe(200)
 
     const urlAttempt = await agent
@@ -121,7 +121,7 @@ describe('Auth-gate contract (AUTH_REQUIRED=true)', () => {
     const csrfRaw = (probe.headers['set-cookie'] as unknown as string[] | undefined)?.find((c) => c.includes('dbh_csrf='))
     const csrf = csrfRaw ? decodeURIComponent(csrfRaw.split(';')[0].split('=').slice(1).join('=')) : ''
     const agent = supertest(t.app)
-    await agent.post('/api/connections/api').set('Cookie', cookies).set('x-csrf-token', csrf).send({ providerId: 'mongodb-atlas', apiKey: 'cid:secret' })
+    await agent.post('/api/connections/api').set('Cookie', cookies).set('x-csrf-token', csrf).send({ providerId: 'mongodb-atlas', apiKey: 'mdb_sa_id_cid:secret' })
 
     const status = await agent.get('/api/connections/status').set('Cookie', cookies)
     expect(status.status).toBe(200)

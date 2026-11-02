@@ -18,6 +18,7 @@ import { MonitoringPage } from './pages/MonitoringPage'
 import { ImportExportPage } from './pages/ImportExportPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { SecurityPage } from './pages/SecurityPage'
+import { AdminPage } from './pages/AdminPage'
 import { PrivacyPage, TermsPage } from './pages/LegalPages'
 
 function Shell({ children }: { children: React.ReactNode }) {
@@ -135,6 +136,7 @@ export default function App() {
                 <Route path="/io" element={<ImportExportPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/security" element={<SecurityPage />} />
+                <Route path="/ad" element={<AdminPage />} />
                 <Route path="*" element={<Navigate to="/overview" replace />} />
               </Routes>
             </Shell>

@@ -62,6 +62,8 @@ export interface Project {
   platformId?: string
   createdAt?: string
   updatedAt?: string
+  /** Aggregate compute state (e.g. `active`, `paused`, `provisioning`). */
+  status?: string
 }
 
 export interface Branch {
