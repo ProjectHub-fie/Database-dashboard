@@ -38,7 +38,6 @@ function Shell({ children }: { children: React.ReactNode }) {
   }
   // Account-level screens must stay reachable without a database connection,
   // otherwise an operator can never rotate their bootstrap password.
-  const ACCOUNT_PATHS = ['/connect', '/settings', '/security', '/ad']
   const signedIn = auth.me.authenticated
   // Require a connection before any database management screen.
   // Anonymous visitors still need a live connection to enter the chrome; the
@@ -76,18 +75,28 @@ function EntryRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+/** Account-level screens must stay reachable without a database connection,
+ * otherwise an operator can never rotate their bootstrap password or reach the
+ * admin portal. Used by `RequireConnection` (outer guard) and `Shell` (which
+ * renders the chrome for these pages). */
+const ACCOUNT_PATHS = ['/connect', '/settings', '/security', '/ad']
+
 /**
  * Dashboard routes need a live connection: every panel reads from the session's
  * pool or API key. Without one they can only render error states, so send the
  * visitor to the entry screen instead. Also covers a connection that is lost
  * mid-session, since AuthContext clears `connected` when the server says so.
+ * Signed-in visitors on an account-scoped path are exempt: settings, security
+ * and the admin portal must stay reachable without a database connection.
  */
 function RequireConnection({ children }: { children: React.ReactNode }) {
   const auth = useAuth()
+  const location = useLocation()
   if (auth.me === null || auth.connection === null) {
     return <PageLoader phase={auth.bootPhase ?? 'connecting'} />
   }
-  if (!auth.connection.connected) return <Navigate to="/connect" replace />
+  const accountPath = auth.me.authenticated && ACCOUNT_PATHS.includes(location.pathname)
+  if (!auth.connection.connected && !accountPath) return <Navigate to="/connect" replace />
   return <>{children}</>
 }
 
