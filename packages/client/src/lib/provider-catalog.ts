@@ -17,6 +17,33 @@ export const FALLBACK_CATALOG: ProviderCatalogEntry[] = [
   },
 ]
 
+/**
+ * Example database URL for the selected provider's engine, used as the input
+ * placeholder. Defaults to the Postgres shape so catalogs shipping with no
+ * kind still render a sensible hint.
+ */
+export function urlPlaceholderFor(provider: ProviderCatalogEntry): string {
+  switch (provider.kind) {
+    case 'mongodb':
+      return 'mongodb+srv://user:password@cluster0.xxxxx.mongodb.net/myDB?retryWrites=true&w=majority'
+    case 'mysql':
+      return 'mysql://user:password@db.example.com:3306/mydb'
+    case 'mariadb':
+      return 'mariadb://user:password@db.example.com:3306/mydb'
+    default:
+      return 'postgresql://user:password@ep-xxx.us-east-2.aws.neon.tech/neondb?sslmode=require'
+  }
+}
+
+/**
+ * Example provider API key: Neon keys start with `neon_`, MongoDB Atlas
+ * digest credentials are `publicKey:privateKey`.
+ */
+export function apiKeyPlaceholderFor(provider: ProviderCatalogEntry): string {
+  if (provider.id === 'mongodb-atlas') return 'publicKey:privateKey'
+  return 'neon_xxxxxxxxxxxxxxxx'
+}
+
 export interface CatalogState {
   /** Providers from `GET /api/providers`, or null when the request failed. */
   providers: ProviderCatalogEntry[] | null

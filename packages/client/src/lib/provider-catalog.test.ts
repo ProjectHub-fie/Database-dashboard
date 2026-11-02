@@ -4,6 +4,8 @@ import {
   supportsAuthMethod,
   catalogIssueMessage,
   reconcileProviderSelection,
+  urlPlaceholderFor,
+  apiKeyPlaceholderFor,
   NO_PROVIDER,
   FALLBACK_CATALOG,
 } from './provider-catalog.js'
@@ -26,6 +28,16 @@ const mysql: ProviderCatalogEntry = {
   available: false,
   authMethods: [],
   controlPlane: false,
+  capabilities: [],
+}
+
+const mongo: ProviderCatalogEntry = {
+  id: 'mongodb-atlas',
+  name: 'MongoDB Atlas',
+  kind: 'mongodb',
+  available: true,
+  authMethods: ['connection', 'api'],
+  controlPlane: true,
   capabilities: [],
 }
 
@@ -129,5 +141,18 @@ describe('placeholder gates submission', () => {
   it('accepts the same provider once chosen', () => {
     expect(supportsAuthMethod([neon, mysql], 'neon', 'connection')).toBe(true)
     expect(supportsAuthMethod([neon, mysql], 'neon', 'api')).toBe(true)
+  })
+})
+
+describe('provider placeholders', () => {
+  it('returns engine-specific URL placeholders', () => {
+    expect(urlPlaceholderFor(mongo)).toContain('mongodb+srv://')
+    expect(urlPlaceholderFor(neon)).toContain('postgresql://')
+    expect(urlPlaceholderFor(mysql)).toContain('mysql://')
+  })
+
+  it('returns a digest-shaped API key placeholder for MongoDB Atlas only', () => {
+    expect(apiKeyPlaceholderFor(mongo)).toBe('publicKey:privateKey')
+    expect(apiKeyPlaceholderFor(neon)).toMatch(/^neon_/)
   })
 })

@@ -38,7 +38,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   }
   // Account-level screens must stay reachable without a database connection,
   // otherwise an operator can never rotate their bootstrap password.
-  const ACCOUNT_PATHS = ['/connect', '/settings', '/security']
+  const ACCOUNT_PATHS = ['/connect', '/settings', '/security', '/ad']
   const signedIn = auth.me.authenticated
   // Require a connection before any database management screen.
   // Anonymous visitors still need a live connection to enter the chrome; the
