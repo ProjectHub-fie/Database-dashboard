@@ -79,7 +79,14 @@ export function registerApiRoutes(app: Express, opts: ApiRouteOptions): void {
   app.use(
     '/api',
     (req, res, next) => {
-      if (req.path === '/auth/login') return next()
+      // Public surfaces that must stay reachable before any session or
+      // account gate. `/auth/login` is the anonymous account entry point;
+      // `/healthz` is the deployment probe — Vercel proxies only `/api/*`
+      // to this origin, so the proxy-health check the admin portal and
+      // `scripts/check-deploy.sh --api` rely on must answer 200 even when
+      // AUTH_REQUIRED=true. `/healthz` (outside the gate) is already public;
+      // this keeps the API-prefixed twin public too.
+      if (req.path === '/auth/login' || req.path === '/healthz') return next()
       if (opts.authRequired === false) return next()
       if (publicApiKeyCallAllowed(req, res)) return next()
       return requireAuth(req, res, next)

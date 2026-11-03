@@ -125,9 +125,14 @@ implemented provider. Build commands:
   `scripts/check-deploy.sh <base-url>` to tell the two apart. The usual cause is
   a Vercel project whose Root Directory is not the repo root, so
   `api/[...path].ts` is never built; the second is `API_ORIGIN` unset or pointing
-  at this same deployment. `deploy-config.test.ts` and
-  `api/api-404-contract.test.ts` guard the wiring, and the client renders
-  `ApiUnreachableBanner` when it sees a non-JSON `/api` response.
+  at this same deployment. The same script's API mode
+  (`scripts/check-deploy.sh --api [origin]`, defaulting to `$API_ORIGIN`) curls
+  the persistent API host at *both* `/api/healthz` and `/healthz` — the Express
+  server registers both (`routes.ts`), and a healthy API must answer both with
+  `{"ok":true}`; deployment mode runs that API check too when `API_ORIGIN` is
+  set. `deploy-config.test.ts` and `api/api-404-contract.test.ts` guard the
+  wiring, and the client renders `ApiUnreachableBanner` when it sees a non-JSON
+  `/api` response.
 - **On the Vercel edge, `req.headers['host']` / `x-forwarded-host` seen by the
   function is often the *deployment* host (`<deploy>.vercel.app`), not the public
   alias the browser used (`dbremote.vercel.app`).** So a naive self-reference
