@@ -49,7 +49,20 @@ the request comes over HTTPS).
 
 ### 4. Health check
 
-`GET /healthz` returns `{"ok":true}` without authentication.
+`GET /healthz` and `GET /api/healthz` both return `{"ok":true}` without
+authentication (the server registers the two routes under one handler). The
+deploy check curls the API host directly at both paths:
+
+```bash
+API_ORIGIN=https://your-server-host scripts/check-deploy.sh --api
+# or, when the API origin is exported
+scripts/check-deploy.sh --api
+```
+
+An API is healthy only when both paths answer `200 application/json` with
+`{"ok":true}`. Deployment mode (`scripts/check-deploy.sh <base-url>`) runs the
+same two probes against every origin in `API_ORIGIN` after checking the
+deployment proxy.
 
 ## Credential rotation
 

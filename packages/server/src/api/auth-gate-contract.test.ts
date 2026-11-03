@@ -29,6 +29,16 @@ describe('Auth-gate contract (AUTH_REQUIRED=true)', () => {
     expect(res.body.authenticated).toBe(false)
   })
 
+  it('keeps the health probe public under AUTH_REQUIRED=true', async () => {
+    // `scripts/check-deploy.sh --api` and the admin portal probe this path: the
+    // deployment proxies only /api/* to the API origin, so /api/healthz must
+    // answer 200 {"ok":true} without any session even when the account gate is
+    // on. A 401 here made the API check fail on a healthy deployment.
+    const res = await supertest(app).get('/api/healthz')
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ ok: true })
+  })
+
   it('allows an unsigned browser to open a provider-API-key session (the unlocked tab)', async () => {
     const t = await makeTestApp({ authRequired: true })
     const res = await new (await import('../test/test-app.js')).TestAgent(t.app).post(
